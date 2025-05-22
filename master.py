@@ -18,9 +18,14 @@ class UDPSocketServer:
             self.handle_message(data, addr)
 
     def handle_message(self, data, addr):
-        response = "Hello from PC"
+        # Respond with "UNLOCK" if data is "E3BA4B0E", else "LOCK"
+        message = data.decode().strip()
+        if message == "E3BA4B0E":
+            response = "UNLOCK"
+        else:
+            response = "LOCK"
         self.sock.sendto(response.encode(), addr)
-        print(f"[SEND] Sent reply to {addr}")
+        print(f"[SEND] Sent reply '{response}' to {addr}")
 
 if __name__ == "__main__":
     server = UDPSocketServer(UDP_PORT, BUFFER_SIZE)
