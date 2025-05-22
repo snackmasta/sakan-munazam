@@ -9,6 +9,7 @@ class UDPSocketServer:
         self.buffer_size = buffer_size
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("", self.port))
+        self.devices = {}  # Track device states by address
         print(f"[INFO] Listening on UDP port {self.port}...")
 
     def listen(self):
@@ -22,10 +23,13 @@ class UDPSocketServer:
         message = data.decode().strip()
         if message == "E3BA4B0E":
             response = "UNLOCK"
+            self.devices[addr] = "UNLOCKED"
         else:
             response = "LOCK"
+            self.devices[addr] = "LOCKED"
         self.sock.sendto(response.encode(), addr)
         print(f"[SEND] Sent reply '{response}' to {addr}")
+        print(f"[STATE] Devices: {self.devices}")
 
 if __name__ == "__main__":
     server = UDPSocketServer(UDP_PORT, BUFFER_SIZE)
