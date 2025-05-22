@@ -9,7 +9,6 @@ class UDPSocketServer:
         self.buffer_size = buffer_size
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("", self.port))
-        self.toggle = True  # Add a toggle state
         print(f"[INFO] Listening on UDP port {self.port}...")
 
     def listen(self):
@@ -19,14 +18,9 @@ class UDPSocketServer:
             self.handle_message(data, addr)
 
     def handle_message(self, data, addr):
-        # Toggle response between "LOCK" and "UNLOCK"
-        if self.toggle:
-            response = "LOCK"
-        else:
-            response = "UNLOCK"
-        self.toggle = not self.toggle  # Flip the toggle for next time
+        response = "Hello from PC"
         self.sock.sendto(response.encode(), addr)
-        print(f"[SEND] Sent reply '{response}' to {addr}")
+        print(f"[SEND] Sent reply to {addr}")
 
 if __name__ == "__main__":
     server = UDPSocketServer(UDP_PORT, BUFFER_SIZE)
