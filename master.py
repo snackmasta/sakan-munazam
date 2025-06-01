@@ -1,5 +1,6 @@
 import socket
 import threading
+from sql import is_user_id_valid  # <-- Add this import
 
 UDP_PORT = 4210
 BUFFER_SIZE = 1024
@@ -27,9 +28,9 @@ class UDPSocketServer:
                 break
 
     def handle_message(self, data, addr):
-        # Respond with "UNLOCK" if data is "E3BA4B0E", else "LOCK"
         message = data.decode().strip()
-        if message == "E3BA4B0E":
+        user_id = message  # Assuming the message is the user_id
+        if is_user_id_valid(user_id):
             response = "UNLOCK"
             self.devices[addr] = "UNLOCKED"
         else:
