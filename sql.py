@@ -1,34 +1,41 @@
 import mysql.connector
 
-# Connect to the database
-db = mysql.connector.connect(
-    host="localhost",        # Change if needed
-    user="root",    # Your DB username
-    password="kucingku",# Your DB password
-    database="mtu_smart_classroom"
-)
+def is_user_id_valid(user_id):
+    db = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="kucingku",
+        database="mtu_smart_classroom"
+    )
+    cursor = db.cursor(buffered=True)
+    query = "SELECT 1 FROM room_reservations WHERE user_id = %s"
+    cursor.execute(query, (user_id,))
+    result = cursor.fetchone()
+    cursor.close()
+    db.close()
+    return result is not None
 
-# Create a cursor
-cursor = db.cursor()
+def get_all_user_ids():
+    db = mysql.connector.connect(
+        host="localhost",
+        user="root",
+        password="kucingku",
+        database="mtu_smart_classroom"
+    )
+    cursor = db.cursor()
+    query = "SELECT user_id FROM room_reservations"
+    cursor.execute(query)
+    user_ids = [row[0] for row in cursor.fetchall()]
+    cursor.close()
+    db.close()
+    return user_ids
 
-# Execute the query
-query = "SELECT * FROM room_reservations"
-cursor.execute(query)
-
-# Fetch all results
-results = cursor.fetchall()
-
-# Column names (optional but nice)
-column_names = [i[0] for i in cursor.description]
-
-# Print header
-print(" | ".join(column_names))
-print("-" * 60)
-
-# Print each row
-for row in results:
-    print(" | ".join(str(cell) for cell in row))
-
-# Close connection
-cursor.close()
-db.close()
+if __name__ == "__main__":
+    print("All valid user IDs in the database:")
+    for uid in get_all_user_ids():
+        print(uid)
+    test_user_id = input("Enter user_id to test: ").strip()
+    if is_user_id_valid(test_user_id):
+        print("User ID is valid (found in database).")
+    else:
+        print("User ID is NOT valid (not found in database).")
