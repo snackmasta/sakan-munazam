@@ -2,7 +2,7 @@
 import socket
 from ..config.settings import UDP_PORT, BUFFER_SIZE, DEVICE_TYPE_LIGHT, CMD_UNLOCK, CMD_LOCK
 from ..handlers.device_manager import DeviceManager
-from sql import is_access_allowed, is_user_id_valid
+from ..utils.sql import is_access_allowed, is_user_id_valid
 
 class UDPHandler:
     def __init__(self, port=UDP_PORT, buffer_size=BUFFER_SIZE):
