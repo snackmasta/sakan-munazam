@@ -2,7 +2,7 @@
 import socket
 from ..config.settings import UDP_PORT, BUFFER_SIZE, DEVICE_TYPE_LIGHT, CMD_UNLOCK, CMD_LOCK
 from ..handlers.device_manager import DeviceManager
-from sql import is_access_allowed
+from sql import is_access_allowed, is_user_id_valid
 
 class UDPHandler:
     def __init__(self, port=UDP_PORT, buffer_size=BUFFER_SIZE):
@@ -26,34 +26,47 @@ class UDPHandler:
                 pass
         print(f"[LIGHT] {device.device_id} - State: {state}, Lux: {device.current_lux}, PWM: {device.pwm_value}")
 
-    def handle_lock_message(self, device, message, addr):
+    def handle_lock_message(self, device, uid, addr):
         """Handle messages from lock devices."""
-        if len(message.strip()) == 8:  # RFID card format
-            user_id = message.strip()
+        uid = uid.strip()
+        uid_without_colons = uid.replace(":", "")
+        print(f"[LOCK] Processing UID: {uid_without_colons} from device {device.device_id}")
+        
+        if len(uid_without_colons) == 14:  # 7 bytes of hex (14 characters)
             ip_address = addr[0]
-            if is_access_allowed(user_id, ip_address):
-                response = CMD_UNLOCK
-                device.update_state("UNLOCKED")
-            else:
+            # Use UID with colons for DB check
+            if not is_user_id_valid(uid):
                 response = CMD_LOCK
                 device.update_state("LOCKED")
+                print(f"[LOCK] {device.device_id} - Invalid user ID: {uid}")
+            else:
+                if is_access_allowed(uid, ip_address):
+                    response = CMD_UNLOCK
+                    device.update_state("UNLOCKED")
+                else:
+                    response = CMD_LOCK
+                    device.update_state("LOCKED")
+                print(f"[LOCK] {device.device_id} - State: {device.state}, Response: {response}")
             self.sock.sendto(response.encode(), addr)
-            print(f"[LOCK] {device.device_id} - State: {device.state}, Response: {response}")
+        else:
+            print(f"[ERROR] UID length invalid: {uid_without_colons} (len={len(uid_without_colons)})")
 
     def handle_message(self, message, addr):
         """Handle incoming UDP messages."""
+        print(f"[UDP] Received: {message} from {addr}")
         parts = message.split(":")
         
         if len(parts) >= 2:
             device_id = parts[0]
             device_type = DEVICE_TYPE_LIGHT if "light" in device_id else "lock"
-            
             device = self.device_manager.register_or_update_device(device_id, device_type, addr)
             
             if device_type == DEVICE_TYPE_LIGHT:
                 self.handle_light_message(device, parts)
             else:
-                self.handle_lock_message(device, message, addr)
+                # For lock devices, join all remaining parts as the UID
+                uid = ":".join(parts[1:])
+                self.handle_lock_message(device, uid, addr)
 
     def control_light(self, device_id, command):
         """Send control command to a light device."""

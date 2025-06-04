@@ -1,63 +1,79 @@
 import mysql.connector
+from mysql.connector import pooling
 from datetime import datetime
 
+# Database configuration
+DB_CONFIG = {
+    "host": "localhost",
+    "user": "root",
+    "password": "kucingku",
+    "database": "mtu_smart_classroom"
+}
+
+# Create a connection pool
+connection_pool = mysql.connector.pooling.MySQLConnectionPool(
+    pool_name="mypool",
+    pool_size=5,
+    **DB_CONFIG
+)
+
+def get_connection():
+    return connection_pool.get_connection()
+
 def is_user_id_valid(user_id):
-    db = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="kucingku",
-        database="mtu_smart_classroom"
-    )
-    cursor = db.cursor(buffered=True)
-    query = "SELECT 1 FROM room_reservations WHERE user_id = %s"
-    cursor.execute(query, (user_id,))
-    result = cursor.fetchone()
-    cursor.close()
-    db.close()
-    return result is not None
+    """Quick check if a user ID exists in any reservation."""
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(buffered=True)
+        query = "SELECT 1 FROM room_reservations WHERE user_id = %s"
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        return result is not None
+    finally:
+        cursor.close()
+        connection.close()
 
 def get_all_user_ids():
-    db = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="kucingku",
-        database="mtu_smart_classroom"
-    )
-    cursor = db.cursor()
-    query = "SELECT user_id FROM room_reservations"
-    cursor.execute(query)
-    user_ids = [row[0] for row in cursor.fetchall()]
-    cursor.close()
-    db.close()
-    return user_ids
+    """Get all unique user IDs from reservations."""
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+        query = "SELECT DISTINCT user_id FROM room_reservations"
+        cursor.execute(query)
+        user_ids = [row[0] for row in cursor.fetchall()]
+        return user_ids
+    finally:
+        cursor.close()
+        connection.close()
 
 def is_access_allowed(user_id, ip_address):
-    db = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="kucingku",
-        database="mtu_smart_classroom"
-    )
-    cursor = db.cursor(buffered=True)
-    # 1. Get room_id from slave table using ip_address
-    cursor.execute("SELECT room_id FROM slave WHERE ip_address = %s", (ip_address,))
-    row = cursor.fetchone()
-    if not row:
+    """Check if a user has access to a room at the current time."""
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(buffered=True)
+        
+        # 1. Get room_id from slave table using ip_address
+        cursor.execute("SELECT room_id FROM slave WHERE ip_address = %s", (ip_address,))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        room_id = row[0]
+        
+        # 2. Check for valid reservation
+        now = datetime.now()
+        today = now.strftime('%Y-%m-%d')
+        current_time = now.strftime('%H:%M:%S')
+        query = (
+            "SELECT 1 FROM room_reservations "
+            "WHERE user_id = %s AND room_id = %s "
+            "AND date = %s AND start_time <= %s AND end_time >= %s"
+        )
+        cursor.execute(query, (user_id, room_id, today, current_time, current_time))
+        result = cursor.fetchone()
+        return result is not None
+    finally:
         cursor.close()
-        db.close()
-        return False
-    room_id = row[0]
-    # 2. Check for valid reservation
-    now = datetime.now()
-    today = now.strftime('%Y-%m-%d')
-    current_time = now.strftime('%H:%M:%S')
-    query = ("SELECT 1 FROM room_reservations WHERE user_id = %s AND room_id = %s "
-             "AND date = %s AND start_time <= %s AND end_time >= %s")
-    cursor.execute(query, (user_id, room_id, today, current_time, current_time))
-    result = cursor.fetchone()
-    cursor.close()
-    db.close()
-    return result is not None
+        connection.close()
 
 if __name__ == "__main__":
     print("All valid user IDs in the database:")

@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.4"
+#define CURRENT_VERSION "1.0.6"
 #define DEVICE_ID "lock_208"
 
 const char* ssid = "ALICE";
@@ -50,11 +50,12 @@ void loop() {
     // 1. Check for card and broadcast UID if detected
     if (isCardDetected()) {
         String uid = getCardUID();
-        Serial.println(uid);
-
-        udpHandler.sendBroadcast(uid.c_str());
+        String message = String(DEVICE_ID) + ":" + uid;  // Format: "lock_208:044743127A6A80"
+        Serial.println("Card detected: " + uid);
+        Serial.println("Sending: " + message);
+        
+        udpHandler.sendBroadcast(message.c_str());
         delay(10);
-        uid = ""; // Clear the uid variable
     }
 
     // 2. Always listen for UDP responses

@@ -16,14 +16,13 @@ String getCardUID() {
     if (rfid.uid.uidByte[i] < 0x10) {
       uid += "0"; // Add leading zero if byte is less than 0x10
     }
-    uid += String(rfid.uid.uidByte[i], HEX); // Add the hex representation of the byte
-    if (i < rfid.uid.size - 1) { // Add a colon if it's not the last byte
-      uid += ":";
+    uid += String(rfid.uid.uidByte[i], HEX);
+    if (i < rfid.uid.size - 1) {
+      uid += ":"; // Add colon between bytes except for the last one
     }
   }
-// uid will now be in the format "04:3D:84:BA:EA:68:80"
-  uid.toUpperCase();
-  rfid.PICC_HaltA();
-  rfid.PCD_StopCrypto1();
-  return uid;
+  uid.toUpperCase();  // Convert to uppercase
+  rfid.PICC_HaltA();  // Stop reading
+  rfid.PCD_StopCrypto1();  // Stop encryption
+  return uid;  // Returns format like "04:6F:87:12:7A:6A:80"
 }
