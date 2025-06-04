@@ -1,0 +1,41 @@
+# Node.js dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*
+
+# Build output
+dist/
+build/
+
+# Misc
+*.swp
+*.swo
+
+# VSCode settings
+.vscode/
+
+# Coverage reports
+coverage/
+
+# Static analysis
+.eslintcache
+
+# Optional npm cache directory
+.npm
+
+# IDE files
+.idea/
+*.iml

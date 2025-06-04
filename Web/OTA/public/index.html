@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP8266 OTA Firmware Manager</title>    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .actions-bar {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .device-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .status.up-to-date {
+            background-color: #4caf50;
+            color: white;
+        }
+        .status.update-available {
+            background-color: #ff9800;
+            color: white;
+        }
+        button {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 8px;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .device-info {
+            margin-bottom: 15px;
+        }
+        .version-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .version-input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .dropzone {
+            border: 2px dashed #2196F3;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 10px 0;
+            background-color: #f8f9fa;
+            transition: background-color 0.3s;
+        }
+        .dropzone.drag-over {
+            background-color: #e3f2fd;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 4px;
+            color: white;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .toast.success {
+            background-color: #4caf50;
+        }
+        .toast.error {
+            background-color: #f44336;
+        }    </style>
+</head>
+<body>    <h1>ESP8266 OTA Firmware Manager</h1>
+    <div class="actions-bar">
+        <input type="text" id="new-device-id" class="version-input" placeholder="New device ID">
+        <button onclick="addDevice()">Add Device</button>
+    </div>
+    <div id="devices-container"></div>
+
+    <script>
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            // Show toast
+            setTimeout(() => toast.style.opacity = '1', 100);
+            
+            // Hide and remove toast
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        async function updateVersion(deviceId, version) {
+            try {
+                const response = await fetch('/update-version', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId, version })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(`Version updated to ${version}`);
+                    refreshDevices();
+                } else {
+                    showToast(data.error || 'Failed to update version', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to update version', 'error');
+                console.error('Error updating version:', error);
+            }
+        }
+
+        async function uploadFirmware(deviceId, file) {
+            const formData = new FormData();
+            formData.append('deviceId', deviceId);
+            formData.append('firmware', file);
+
+            try {
+                const response = await fetch('/upload-firmware', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Firmware uploaded successfully');
+                    refreshDevices();
+                } else {
+                    showToast(data.error || 'Failed to upload firmware', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to upload firmware', 'error');
+                console.error('Error uploading firmware:', error);
+            }
+        }        async function addDevice() {
+            const deviceId = document.getElementById('new-device-id').value.trim();
+            if (!deviceId) {
+                showToast('Please enter a device ID', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/device', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`Device ${deviceId} added successfully`);
+                    document.getElementById('new-device-id').value = '';
+                    refreshDevices();
+                } else {
+                    showToast(data.error || 'Failed to add device', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to add device', 'error');
+                console.error('Error adding device:', error);
+            }
+        }
+
+        async function renameDevice(oldId, newId) {
+            if (!newId) {
+                showToast('Please enter a new device ID', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/rename-device', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ oldId, newId })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`Device renamed to ${newId}`);
+                    refreshDevices();
+                } else {
+                    showToast(data.error || 'Failed to rename device', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to rename device', 'error');
+                console.error('Error renaming device:', error);
+            }
+        }
+
+        function createDeviceCard(deviceId, version) {
+            const deviceCard = document.createElement('div');
+            deviceCard.className = 'device-card';
+            
+            // Device info and rename control
+            const deviceInfo = document.createElement('div');
+            deviceInfo.className = 'device-info';
+            
+            const deviceHeader = document.createElement('div');
+            deviceHeader.style.display = 'flex';
+            deviceHeader.style.alignItems = 'center';
+            deviceHeader.style.gap = '10px';
+            deviceHeader.style.marginBottom = '10px';
+            
+            const deviceTitle = document.createElement('h2');
+            deviceTitle.style.margin = '0';
+            deviceTitle.textContent = `Device: ${deviceId}`;
+            
+            const renameInput = document.createElement('input');
+            renameInput.type = 'text';
+            renameInput.className = 'version-input';
+            renameInput.placeholder = 'New device ID';
+            renameInput.style.maxWidth = '150px';
+            
+            const renameButton = document.createElement('button');
+            renameButton.textContent = 'Rename';
+            renameButton.onclick = () => renameDevice(deviceId, renameInput.value.trim());
+            
+            deviceHeader.appendChild(deviceTitle);
+            deviceHeader.appendChild(renameInput);
+            deviceHeader.appendChild(renameButton);
+            deviceInfo.appendChild(deviceHeader);
+            
+            // Version control
+            const versionControl = document.createElement('div');
+            versionControl.className = 'version-control';
+            versionControl.innerHTML = `
+                <input type="text" class="version-input" value="${version}" placeholder="Version number">
+                <button class="update-version">Update Version</button>
+                <button class="download-firmware">Download Current Firmware</button>
+            `;
+            
+            // Dropzone for firmware upload
+            const dropzone = document.createElement('div');
+            dropzone.className = 'dropzone';
+            dropzone.innerHTML = 'Drag and drop new firmware file here, or click to select';
+            dropzone.ondragover = (e) => {
+                e.preventDefault();
+                dropzone.classList.add('drag-over');
+            };
+            dropzone.ondragleave = () => dropzone.classList.remove('drag-over');
+            dropzone.ondrop = (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('drag-over');
+                const file = e.dataTransfer.files[0];
+                if (file && file.name.endsWith('.bin')) {
+                    uploadFirmware(deviceId, file);
+                } else {
+                    showToast('Please upload a .bin file', 'error');
+                }
+            };
+            dropzone.onclick = () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.bin';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        uploadFirmware(deviceId, file);
+                    }
+                };
+                input.click();
+            };
+            
+            // Event listeners
+            versionControl.querySelector('.update-version').onclick = () => {
+                const newVersion = versionControl.querySelector('.version-input').value;
+                updateVersion(deviceId, newVersion);
+            };
+            
+            versionControl.querySelector('.download-firmware').onclick = () => {
+                window.location.href = `/firmware?deviceId=${deviceId}`;
+            };
+            
+            // Assemble card
+            deviceCard.appendChild(deviceInfo);
+            deviceCard.appendChild(versionControl);
+            deviceCard.appendChild(dropzone);
+            
+            return deviceCard;
+        }        // Function to refresh device information
+        async function refreshDevices() {
+            const container = document.getElementById('devices-container');
+            container.innerHTML = ''; // Clear existing content
+
+            try {
+                const response = await fetch('/devices');
+                const devices = await response.json();
+                
+                devices.forEach(device => {
+                    const card = createDeviceCard(device.id, device.version);
+                    container.appendChild(card);
+                });
+            } catch (error) {
+                console.error('Error fetching devices:', error);
+                showToast('Failed to load devices', 'error');
+            }
+        }
+
+        // Initial load
+        refreshDevices();
+
+        // Refresh every 30 seconds
+        setInterval(refreshDevices, 30000);
+    </script>
+</body>
+</html>

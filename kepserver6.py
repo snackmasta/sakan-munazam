@@ -7,8 +7,8 @@ try:
     print("Connected to OPC UA server")
 
     # Get Tag1 and Tag2 nodes
-    tag1 = client.get_node("ns=2;s=Channel1.Device1.Tag1")
-    tag2 = client.get_node("ns=2;s=Channel1.Device1.Tag2")
+    tag1 = client.get_node("ns=2;s=Room_207.Lock_207.Tag1")
+    tag2 = client.get_node("ns=2;s=Room_207.Lock_207.Tag2")
 
     # Read value from Tag1
     val1 = tag1.get_value()

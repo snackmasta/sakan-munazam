@@ -1,0 +1,76 @@
+#include "WiFiUDPHandler.h"
+#include "LockControl.h"
+#include "RFIDHandler.h"
+#include "OTAHandler.h"
+
+// OTA Update Configuration
+#define OTA_SERVER "192.168.137.1"
+#define OTA_PORT 5000
+#define CURRENT_VERSION "1.0.4"
+#define DEVICE_ID "lock_207"
+
+const char* ssid = "ALICE";
+const char* password = "@channel";
+
+// Define the GPIO pin for the lock control
+#define LOCK_GPIO_PIN 15
+
+WiFiUDPHandler udpHandler(ssid, password);
+LockControl lockController(LOCK_GPIO_PIN);
+OTAHandler otaHandler(OTA_SERVER, OTA_PORT, DEVICE_ID, CURRENT_VERSION);
+
+void setup() {
+    Serial.begin(115200);
+    delay(100);
+    
+    // Initialize WiFi and check for updates
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting to WiFi");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nConnected!");
+    
+    otaHandler.begin();
+    otaHandler.checkForUpdates();
+    
+    delay(500); // Add delay before hardware initialization
+    
+    // Initialize hardware and other modules
+    SPI.begin();
+    initializeRFID();
+    udpHandler.begin();
+    lockController.begin();
+    
+    Serial.println("ESP8266 ready. Waiting for commands...");
+}
+
+void loop() {
+    // 1. Check for card and broadcast UID if detected
+    if (isCardDetected()) {
+        String uid = getCardUID();
+        Serial.println(uid);
+
+        udpHandler.sendBroadcast(uid.c_str());
+        delay(10);
+        uid = ""; // Clear the uid variable
+    }
+
+    // 2. Always listen for UDP responses
+    String data = udpHandler.receiveResponses(100); // Use a short timeout for responsiveness
+    if (data != "") {
+        Serial.print("Received data: ");
+        Serial.println(data);
+
+        if (data == "UNLOCK") {
+            lockController.unlock();
+        } else if (data == "LOCK") {
+            lockController.lock();
+        } else {
+            Serial.println("Unknown command received.");
+        }
+    }
+
+    delay(10); // Small delay to avoid busy loop
+}
