@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.0"
+#define CURRENT_VERSION "1.0.1"
 #define DEVICE_ID "light_207"
 
 // WiFi credentials
@@ -77,20 +77,27 @@ void handleUDPMessage(String message) {
 
 void adjustLight() {
     if (!lightState) return;  // Don't adjust if light is off
-    
+
+    int raw = ldrSensor.readRaw();
+    float voltage = ldrSensor.readVoltage();
     float currentLux = ldrSensor.readLux(LDR_FIXED_R);
     if (currentLux < 0) return;  // Invalid reading
-    
+
+    // Debug output
+    Serial.print("Raw: ");
+    Serial.print(raw);
+    Serial.print(" Voltage: ");
+    Serial.print(voltage);
+    Serial.print(" Lux: ");
+    Serial.print(currentLux);
+
     // Simple proportional control
     float error = TARGET_LUX - currentLux;
     int adjustment = error * 0.5;  // Adjust sensitivity with this multiplier
-    
+
     currentPWM = constrain(currentPWM + adjustment, PWM_MIN, PWM_MAX);
     analogWrite(LIGHT_PIN, currentPWM);
-    
-    // Debug output
-    Serial.print("Lux: ");
-    Serial.print(currentLux);
+
     Serial.print(" PWM: ");
     Serial.println(currentPWM);
 }
@@ -114,11 +121,13 @@ void loop() {
     // Periodically broadcast device status
     if (currentMillis - lastUDPBroadcast >= udpBroadcastInterval) {
         lastUDPBroadcast = currentMillis;
+        int raw = ldrSensor.readRaw();
         float currentLux = ldrSensor.readLux(LDR_FIXED_R);
         String status = String(DEVICE_ID) + ":" + 
                        (lightState ? "ON" : "OFF") + ":" +
                        String(currentLux, 1) + ":" +
-                       String(currentPWM);
+                       String(currentPWM) + ":" +
+                       String(raw);
         udpHandler.sendBroadcast(status.c_str());
     }
 

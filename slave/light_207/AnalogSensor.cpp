@@ -8,7 +8,11 @@ void AnalogSensor::begin() {
 }
 
 int AnalogSensor::readRaw() {
+#if defined(ESP8266)
+  return analogRead(A0); // ESP8266 only supports A0
+#else
   return analogRead(analogPin);
+#endif
 }
 
 float AnalogSensor::readVoltage() {
