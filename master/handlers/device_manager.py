@@ -19,10 +19,12 @@ class DeviceManager:
         return self.devices.get(device_id)
 
     def get_device_status(self):
-        """Get status of all devices."""
+        """Get status of all devices, including latest UID for locks from log."""
+        from master.utils.ui_handler import get_latest_lock_uids_from_log
         lights = []
         locks = []
-        
+        # Get latest UIDs from log
+        latest_uids = get_latest_lock_uids_from_log("c:/Users/Legion/Desktop/sakan-munazam/server.log")
         for device_id, device in self.devices.items():
             if device.device_type == DEVICE_TYPE_LIGHT:
                 lights.append((
@@ -33,13 +35,14 @@ class DeviceManager:
                     device.to_dict()["last_update"]
                 ))
             else:
-                locks.append((
-                    device_id,
-                    device.state,
-                    device.to_dict()["last_update"]
-                ))
-                
+                # Add latest_uid to lock status tuple
+                locks.append({
+                    "Device ID": device_id,
+                    "State": device.state,
+                    "Updated": device.to_dict()["last_update"],
+                    "latest_uid": latest_uids.get(device_id, "?")
+                })
         return {
             "lights": sorted(lights),
-            "locks": sorted(locks)
+            "locks": sorted(locks, key=lambda x: x["Device ID"])
         }
