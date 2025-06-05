@@ -24,21 +24,17 @@ class UDPHandler:
                 device.update_light_data(lux, pwm)
             except ValueError:
                 pass
-        print(f"[LIGHT] {device.device_id} - State: {state}, Lux: {device.current_lux}, PWM: {device.pwm_value}")
 
     def handle_lock_message(self, device, uid, addr):
         """Handle messages from lock devices."""
         uid = uid.strip()
         uid_without_colons = uid.replace(":", "")
-        print(f"[LOCK] Processing UID: {uid_without_colons} from device {device.device_id}")
-        
         if len(uid_without_colons) == 14:  # 7 bytes of hex (14 characters)
             ip_address = addr[0]
             # Use UID with colons for DB check
             if not is_user_id_valid(uid):
                 response = CMD_LOCK
                 device.update_state("LOCKED")
-                print(f"[LOCK] {device.device_id} - Invalid user ID: {uid}")
             else:
                 if is_access_allowed(uid, ip_address):
                     response = CMD_UNLOCK
@@ -46,14 +42,12 @@ class UDPHandler:
                 else:
                     response = CMD_LOCK
                     device.update_state("LOCKED")
-                print(f"[LOCK] {device.device_id} - State: {device.state}, Response: {response}")
             self.sock.sendto(response.encode(), addr)
         else:
-            print(f"[ERROR] UID length invalid: {uid_without_colons} (len={len(uid_without_colons)})")
+            pass
 
     def handle_message(self, message, addr):
         """Handle incoming UDP messages."""
-        print(f"[UDP] Received: {message} from {addr}")
         parts = message.split(":")
         
         if len(parts) >= 2:
