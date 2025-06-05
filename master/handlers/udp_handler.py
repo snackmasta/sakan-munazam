@@ -85,4 +85,3 @@ class UDPHandler:
         """Stop the UDP server."""
         self.running = False
         self.sock.close()
-        print("[INFO] UDP server stopped.")
