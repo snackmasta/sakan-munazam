@@ -35,6 +35,20 @@ def input_listener(udp_handler, session):
                     print(f"Device {device_id} not found or not a light")
             else:
                 print(f"Invalid command. Use {CMD_ON} or {CMD_OFF}")
+        elif len(cmd) == 6 and cmd[0].lower() == "calibrate":
+            device_id = cmd[1]
+            try:
+                in_min = int(cmd[2])
+                in_max = int(cmd[3])
+                out_min = int(cmd[4])
+                out_max = int(cmd[5])
+                calibration_cmd = f"CALIBRATE:{in_min}:{in_max}:{out_min}:{out_max}"
+                if udp_handler.control_light(device_id, calibration_cmd):
+                    print(f"Calibration command sent to {device_id}")
+                else:
+                    print(f"Device {device_id} not found or not a light")
+            except ValueError:
+                print("Invalid calibration parameters. Use integers.")
         else:
             UIHandler.print_help()
 

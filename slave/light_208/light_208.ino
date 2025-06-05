@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.1"
+#define CURRENT_VERSION "1.0.4"
 #define DEVICE_ID "light_208"
 
 // WiFi credentials
@@ -54,6 +54,7 @@ void setup() {
     analogWrite(LIGHT_PIN, 0);     // Light off initially
     
     ldrSensor.begin();
+    ldrSensor.loadCalibration();
     
     // Initialize UDP and OTA handlers
     udpHandler.begin();
@@ -65,6 +66,29 @@ void setup() {
     Serial.println("Device ID: " + String(DEVICE_ID));
 }
 
+void handleCalibrationCommand(String message) {
+    // Format: CAL:degree:coeff0:coeff1:coeff2
+    float coeffs[3] = {0};
+    int lastPos = 4;
+    int nextPos;
+    int degree = 1;
+    for (int i = 0; i < 4; ++i) {
+        nextPos = message.indexOf(':', lastPos);
+        String val = (i < 3) ? message.substring(lastPos, nextPos) : message.substring(lastPos);
+        if (i == 0) degree = val.toInt();
+        else coeffs[i-1] = val.toFloat();
+        lastPos = nextPos + 1;
+    }
+    ldrSensor.setCalibrationCoeffs(coeffs, degree);
+    Serial.print("Calibration set. Degree: ");
+    Serial.print(degree);
+    Serial.print(" Coeffs: ");
+    for (int i = 0; i <= degree; ++i) {
+        Serial.print(coeffs[i]); Serial.print(" ");
+    }
+    Serial.println();
+}
+
 void handleUDPMessage(String message) {
     if (message == "ON") {
         lightState = true;
@@ -72,22 +96,20 @@ void handleUDPMessage(String message) {
         lightState = false;
         analogWrite(LIGHT_PIN, 0);
         currentPWM = 0;
+    } else if (message.startsWith("CAL:")) {
+        handleCalibrationCommand(message);
     }
 }
 
 void adjustLight() {
-    if (!lightState) return;  // Don't adjust if light is off
-
+    if (!lightState) return;
     int raw = ldrSensor.readRaw();
-    float voltage = ldrSensor.readVoltage();
-    float currentLux = ldrSensor.readLux(LDR_FIXED_R);
-    if (currentLux < 0) return;  // Invalid reading
+    float currentLux = ldrSensor.calibratedLux(raw);
+    if (currentLux < 0) currentLux = ldrSensor.readLux(LDR_FIXED_R);
 
     // Debug output
     Serial.print("Raw: ");
     Serial.print(raw);
-    Serial.print(" Voltage: ");
-    Serial.print(voltage);
     Serial.print(" Lux: ");
     Serial.print(currentLux);
 
@@ -122,7 +144,8 @@ void loop() {
     if (currentMillis - lastUDPBroadcast >= udpBroadcastInterval) {
         lastUDPBroadcast = currentMillis;
         int raw = ldrSensor.readRaw();
-        float currentLux = ldrSensor.readLux(LDR_FIXED_R);
+        float currentLux = ldrSensor.calibratedLux(raw);
+        if (currentLux < 0) currentLux = ldrSensor.readLux(LDR_FIXED_R);
         String status = String(DEVICE_ID) + ":" + 
                        (lightState ? "ON" : "OFF") + ":" +
                        String(currentLux, 1) + ":" +

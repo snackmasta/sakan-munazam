@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LDR Calibration Tool</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; background: #f7f7f7; }
+    h1 { color: #2c3e50; }
+    .container { background: #fff; padding: 2em; border-radius: 8px; max-width: 600px; margin: auto; box-shadow: 0 2px 8px #0001; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
+    th, td { padding: 0.5em; border: 1px solid #ddd; text-align: center; }
+    input[type="number"] { width: 80px; }
+    .btn { background: #3498db; color: #fff; border: none; padding: 0.5em 1.5em; border-radius: 4px; cursor: pointer; }
+    .btn:disabled { background: #aaa; }
+    .result { margin-top: 1em; font-weight: bold; }
+    .flex { display: flex; gap: 1em; align-items: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>LDR Calibration Tool</h1>
+    <p>Enter pairs of raw ADC readings and known lux values. Fit a calibration curve and send it to the device.</p>
+    <form id="dataForm" onsubmit="return false;">
+      <table>
+        <thead>
+          <tr><th>Raw ADC</th><th>Lux</th><th></th></tr>
+        </thead>
+        <tbody id="dataRows">
+          <tr><td><input type="number" step="1" required></td><td><input type="number" step="any" required></td><td></td></tr>
+        </tbody>
+      </table>
+      <button class="btn" type="button" onclick="addRow()">Add Row</button>
+      <button class="btn" type="button" onclick="removeRow()">Remove Row</button>
+    </form>
+    <div class="flex">
+      <label>Fit Degree:</label>
+      <select id="degree">
+        <option value="1">Linear</option>
+        <option value="2">Quadratic</option>
+      </select>
+      <button class="btn" onclick="fitCurve()">Fit Curve</button>
+    </div>
+    <div class="result" id="fitResult"></div>
+    <div class="flex" style="margin-top:1em;">
+      <label>Device IP:</label>
+      <input id="deviceIp" type="text" placeholder="192.168.137.248" style="width:150px;">
+      <button class="btn" onclick="sendCalibration()">Send Calibration</button>
+      <button class="btn" onclick="saveCalibrationLocally()">Save Locally</button>
+      <button class="btn" onclick="loadCalibrationLocally()">Load Saved</button>
+    </div>
+    <div class="result" id="sendResult"></div>
+  </div>
+  <script>
+    function addRow() {
+      const row = document.createElement('tr');
+      row.innerHTML = '<td><input type="number" step="1" required></td><td><input type="number" step="any" required></td><td></td>';
+      document.getElementById('dataRows').appendChild(row);
+    }
+    function removeRow() {
+      const rows = document.getElementById('dataRows');
+      if (rows.children.length > 1) rows.removeChild(rows.lastChild);
+    }
+    function getData() {
+      const rows = document.querySelectorAll('#dataRows tr');
+      const x = [], y = [];
+      for (const row of rows) {
+        const [adc, lux] = row.querySelectorAll('input');
+        if (adc.value && lux.value) {
+          x.push(Number(adc.value));
+          y.push(Number(lux.value));
+        }
+      }
+      return {x, y};
+    }
+    function fitCurve() {
+      const {x, y} = getData();
+      const degree = Number(document.getElementById('degree').value);
+      if (x.length < degree + 1) {
+        document.getElementById('fitResult').textContent = 'Not enough points for selected degree.';
+        return;
+      }
+      // Least squares polynomial fit
+      const coeffs = polyfit(x, y, degree);
+      let eq = 'Lux = ' + coeffs.map((c,i) => c.toFixed(4) + (i>0?`*x${i>1?`^${i}`:''}`:'')).join(' + ');
+      document.getElementById('fitResult').textContent = eq;
+      document.getElementById('fitResult').dataset.coeffs = JSON.stringify(coeffs);
+      document.getElementById('fitResult').dataset.degree = degree;
+    }
+    // Simple polynomial fit (Vandermonde, normal equations, no regularization)
+    function polyfit(x, y, degree) {
+      const n = degree + 1;
+      const X = Array.from({length: n}, (_,i) => x.map(xi => Math.pow(xi, i)));
+      const XT = X;
+      const XT_X = Array.from({length: n}, (_,i) => Array.from({length: n}, (_,j) => X[i].reduce((sum, val, k) => sum + val * X[j][k], 0)));
+      const XT_y = Array.from({length: n}, (_,i) => X[i].reduce((sum, val, k) => sum + val * y[k], 0));
+      // Solve XT_X * a = XT_y
+      return gaussianElimination(XT_X, XT_y);
+    }
+    function gaussianElimination(A, b) {
+      const n = b.length;
+      for (let i = 0; i < n; i++) {
+        // Partial pivot
+        let maxRow = i;
+        for (let k = i+1; k < n; k++) if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) maxRow = k;
+        [A[i], A[maxRow]] = [A[maxRow], A[i]];
+        [b[i], b[maxRow]] = [b[maxRow], b[i]];
+        // Eliminate
+        for (let k = i+1; k < n; k++) {
+          const c = A[k][i] / A[i][i];
+          for (let j = i; j < n; j++) A[k][j] -= c * A[i][j];
+          b[k] -= c * b[i];
+        }
+      }
+      // Back substitution
+      const x = Array(n).fill(0);
+      for (let i = n-1; i >= 0; i--) {
+        x[i] = b[i];
+        for (let j = i+1; j < n; j++) x[i] -= A[i][j] * x[j];
+        x[i] /= A[i][i];
+      }
+      return x;
+    }
+    async function sendCalibration() {
+      const fitResult = document.getElementById('fitResult');
+      if (!fitResult.dataset.coeffs) {
+        document.getElementById('sendResult').textContent = 'Fit the curve first!';
+        return;
+      }
+      const coeffs = JSON.parse(fitResult.dataset.coeffs);
+      const degree = fitResult.dataset.degree;
+      const ip = document.getElementById('deviceIp').value.trim();
+      if (!ip) {
+        document.getElementById('sendResult').textContent = 'Enter device IP!';
+        return;
+      }
+      // Format: CAL:degree:coeff0:coeff1:coeff2
+      let msg = `CAL:${degree}:${coeffs.map(c=>c.toFixed(6)).join(':')}`;
+      try {
+        // Send via UDP relay API (assume /api/udp?ip=...&msg=...)
+        const resp = await fetch(`/api/udp?ip=${encodeURIComponent(ip)}&msg=${encodeURIComponent(msg)}`);
+        if (resp.ok) {
+          document.getElementById('sendResult').textContent = 'Calibration sent!';
+        } else {
+          document.getElementById('sendResult').textContent = 'Failed to send: ' + resp.statusText;
+        }
+      } catch (e) {
+        document.getElementById('sendResult').textContent = 'Error: ' + e;
+      }
+    }
+    function saveCalibrationLocally() {
+      const fitResult = document.getElementById('fitResult');
+      if (!fitResult.dataset.coeffs) {
+        document.getElementById('sendResult').textContent = 'Fit the curve first!';
+        return;
+      }
+      const coeffs = JSON.parse(fitResult.dataset.coeffs);
+      const degree = fitResult.dataset.degree;
+      const data = { coeffs, degree };
+      localStorage.setItem('ldrCalibration', JSON.stringify(data));
+      document.getElementById('sendResult').textContent = 'Calibration saved locally!';
+    }
+    function loadCalibrationLocally() {
+      const data = localStorage.getItem('ldrCalibration');
+      if (!data) {
+        document.getElementById('sendResult').textContent = 'No saved calibration.';
+        return;
+      }
+      const { coeffs, degree } = JSON.parse(data);
+      document.getElementById('degree').value = degree;
+      document.getElementById('fitResult').textContent = 'Lux = ' + coeffs.map((c,i) => c.toFixed(4) + (i>0?`*x${i>1?`^${i}`:''}`:'')).join(' + ');
+      document.getElementById('fitResult').dataset.coeffs = JSON.stringify(coeffs);
+      document.getElementById('fitResult').dataset.degree = degree;
+      document.getElementById('sendResult').textContent = 'Calibration loaded from local storage.';
+    }
+  </script>
+</body>
+</html>

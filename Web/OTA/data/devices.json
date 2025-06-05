@@ -8,11 +8,11 @@
     "file": "firmware_lock_208.bin"
   },
   "light_207": {
-    "version": "1.0.1",
+    "version": "1.0.5",
     "file": "firmware_light_207.bin"
   },
   "light_208": {
-    "version": "1.0.1",
+    "version": "1.0.4",
     "file": "firmware_light_208.bin"
   }
 }

@@ -171,6 +171,9 @@ app.get('/firmware', (req, res) => {
   res.download(firmwarePath, deviceFirmware[deviceId].file);
 });
 
+const udpRelay = require('./server/udpRelay');
+app.use('/api/udp', udpRelay);
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`OTA server running on http://0.0.0.0:${PORT}`);
 });
