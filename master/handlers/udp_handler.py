@@ -17,7 +17,15 @@ class UDPHandler:
         """Handle messages from light devices."""
         state = parts[1]
         device.update_state(state)
-        if len(parts) >= 4:
+        if len(parts) >= 5:
+            try:
+                lux = float(parts[2])
+                pwm = int(parts[3])
+                raw_ldr = int(parts[4])
+                device.update_light_data(lux, pwm, raw_ldr)
+            except ValueError:
+                pass
+        elif len(parts) >= 4:
             try:
                 lux = float(parts[2])
                 pwm = int(parts[3])

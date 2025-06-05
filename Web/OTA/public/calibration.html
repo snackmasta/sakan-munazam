@@ -42,12 +42,17 @@
       <button class="btn" onclick="fitCurve()">Fit Curve</button>
     </div>
     <div class="result" id="fitResult"></div>
+    <canvas id="calibGraph" width="560" height="300" style="background:#f9f9f9;border:1px solid #ccc;margin-top:1em;"></canvas>
     <div class="flex" style="margin-top:1em;">
       <label>Device IP:</label>
       <input id="deviceIp" type="text" placeholder="192.168.137.248" style="width:150px;">
       <button class="btn" onclick="sendCalibration()">Send Calibration</button>
       <button class="btn" onclick="saveCalibrationLocally()">Save Locally</button>
       <button class="btn" onclick="loadCalibrationLocally()">Load Saved</button>
+      <button class="btn" onclick="savePairsLocally()">Save Pairs</button>
+      <button class="btn" onclick="loadPairsLocally()">Load Pairs</button>
+      <button class="btn" onclick="savePairsToServer()">Save Pairs to Server</button>
+      <button class="btn" onclick="loadPairsFromServer()">Load Pairs from Server</button>
     </div>
     <div class="result" id="sendResult"></div>
   </div>
@@ -78,6 +83,7 @@
       const degree = Number(document.getElementById('degree').value);
       if (x.length < degree + 1) {
         document.getElementById('fitResult').textContent = 'Not enough points for selected degree.';
+        drawGraph(x, y, null, null);
         return;
       }
       // Least squares polynomial fit
@@ -86,6 +92,38 @@
       document.getElementById('fitResult').textContent = eq;
       document.getElementById('fitResult').dataset.coeffs = JSON.stringify(coeffs);
       document.getElementById('fitResult').dataset.degree = degree;
+      drawGraph(x, y, coeffs, degree);
+    }
+    function drawGraph(x, y, coeffs, degree) {
+      const canvas = document.getElementById('calibGraph');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Axes
+      ctx.strokeStyle = '#bbb';
+      ctx.beginPath(); ctx.moveTo(40, 10); ctx.lineTo(40, 290); ctx.lineTo(550, 290); ctx.stroke();
+      // Data points
+      if (x && y) {
+        ctx.fillStyle = '#e74c3c';
+        for (let i = 0; i < x.length; ++i) {
+          let px = 40 + (x[i] - Math.min(...x)) * 500 / Math.max(1, Math.max(...x) - Math.min(...x));
+          let py = 290 - (y[i] - Math.min(...y)) * 260 / Math.max(1, Math.max(...y) - Math.min(...y));
+          ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill();
+        }
+      }
+      // Fitted curve
+      if (coeffs && degree !== null) {
+        ctx.strokeStyle = '#3498db';
+        ctx.beginPath();
+        for (let i = 0; i <= 500; ++i) {
+          let rx = Math.min(...x) + (Math.max(...x) - Math.min(...x)) * i / 500;
+          let ry = 0;
+          for (let d = 0; d <= degree; ++d) ry += coeffs[d] * Math.pow(rx, d);
+          let px = 40 + (rx - Math.min(...x)) * 500 / Math.max(1, Math.max(...x) - Math.min(...x));
+          let py = 290 - (ry - Math.min(...y)) * 260 / Math.max(1, Math.max(...y) - Math.min(...y));
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
     }
     // Simple polynomial fit (Vandermonde, normal equations, no regularization)
     function polyfit(x, y, degree) {
@@ -173,6 +211,81 @@
       document.getElementById('fitResult').dataset.degree = degree;
       document.getElementById('sendResult').textContent = 'Calibration loaded from local storage.';
     }
+    function savePairsLocally() {
+      const rows = document.querySelectorAll('#dataRows tr');
+      const pairs = [];
+      for (const row of rows) {
+        const [adc, lux] = row.querySelectorAll('input');
+        if (adc.value && lux.value) {
+          pairs.push({adc: Number(adc.value), lux: Number(lux.value)});
+        }
+      }
+      localStorage.setItem('ldrPairs', JSON.stringify(pairs));
+      document.getElementById('sendResult').textContent = 'Pairs saved locally!';
+    }
+    function loadPairsLocally() {
+      const data = localStorage.getItem('ldrPairs');
+      if (!data) {
+        document.getElementById('sendResult').textContent = 'No saved pairs.';
+        return;
+      }
+      const pairs = JSON.parse(data);
+      const tbody = document.getElementById('dataRows');
+      tbody.innerHTML = '';
+      for (const pair of pairs) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td><input type="number" step="1" required value="${pair.adc}"></td><td><input type="number" step="any" required value="${pair.lux}"></td><td></td>`;
+        tbody.appendChild(row);
+      }
+      document.getElementById('sendResult').textContent = 'Pairs loaded from local storage.';
+      fitCurve();
+    }
+    async function savePairsToServer() {
+      const rows = document.querySelectorAll('#dataRows tr');
+      const pairs = [];
+      for (const row of rows) {
+        const [adc, lux] = row.querySelectorAll('input');
+        if (adc.value && lux.value) {
+          pairs.push({adc: Number(adc.value), lux: Number(lux.value)});
+        }
+      }
+      try {
+        const resp = await fetch('/api/calib-pairs', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(pairs)
+        });
+        if (resp.ok) {
+          document.getElementById('sendResult').textContent = 'Pairs saved to server!';
+        } else {
+          document.getElementById('sendResult').textContent = 'Failed to save pairs to server.';
+        }
+      } catch (e) {
+        document.getElementById('sendResult').textContent = 'Error: ' + e;
+      }
+    }
+    async function loadPairsFromServer() {
+      try {
+        const resp = await fetch('/api/calib-pairs');
+        const pairs = await resp.json();
+        const tbody = document.getElementById('dataRows');
+        tbody.innerHTML = '';
+        for (const pair of pairs) {
+          const row = document.createElement('tr');
+          row.innerHTML = `<td><input type="number" step="1" required value="${pair.adc}"></td><td><input type="number" step="any" required value="${pair.lux}"></td><td></td>`;
+          tbody.appendChild(row);
+        }
+        document.getElementById('sendResult').textContent = 'Pairs loaded from server.';
+        fitCurve();
+      } catch (e) {
+        document.getElementById('sendResult').textContent = 'Error: ' + e;
+      }
+    }
+    // Redraw graph on load if calibration exists
+    window.addEventListener('DOMContentLoaded', () => {
+      const {x, y} = getData();
+      drawGraph(x, y, null, null);
+    });
   </script>
 </body>
 </html>

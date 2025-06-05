@@ -174,6 +174,9 @@ app.get('/firmware', (req, res) => {
 const udpRelay = require('./server/udpRelay');
 app.use('/api/udp', udpRelay);
 
+const calibPairs = require('./server/calibPairs');
+app.use('/api/calib-pairs', calibPairs);
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`OTA server running on http://0.0.0.0:${PORT}`);
 });

@@ -11,16 +11,19 @@ class Device:
         # Additional attributes for lights
         self.current_lux = 0.0
         self.pwm_value = 0
+        self.raw_ldr = 0  # New: raw LDR value
 
     def update_state(self, state):
         """Update device state and timestamp."""
         self.state = state
         self.last_update = datetime.now()
 
-    def update_light_data(self, lux, pwm):
+    def update_light_data(self, lux, pwm, raw_ldr=None):
         """Update light-specific data."""
         self.current_lux = lux
         self.pwm_value = pwm
+        if raw_ldr is not None:
+            self.raw_ldr = raw_ldr
 
     def to_dict(self):
         """Convert device to dictionary for status display."""
@@ -31,6 +34,7 @@ class Device:
         if self.device_type == "light":
             data.update({
                 "current_lux": f"{self.current_lux:.1f}",
-                "pwm_value": str(self.pwm_value)
+                "pwm_value": str(self.pwm_value),
+                "raw_ldr": str(self.raw_ldr)  # New: raw LDR value
             })
         return data

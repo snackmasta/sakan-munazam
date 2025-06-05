@@ -9,7 +9,7 @@ class UIHandler:
         output = ["=== Device Status ===\n"]
         if lights:
             output.append("Lights:")
-            headers = ["Device ID", "State", "Lux", "PWM", "Updated"]
+            headers = ["Device ID", "State", "Lux", "PWM", "Raw LDR", "Updated"]
             output.append(tabulate(lights, headers=headers, tablefmt="fancy_grid", floatfmt=".1f"))
         else:
             output.append("Lights: (none)")

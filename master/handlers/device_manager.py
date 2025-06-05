@@ -32,6 +32,7 @@ class DeviceManager:
                     device.state,
                     device.to_dict()["current_lux"],
                     device.to_dict()["pwm_value"],
+                    device.to_dict()["raw_ldr"],  # Add raw LDR value
                     device.to_dict()["last_update"]
                 ))
             else:
