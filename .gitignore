@@ -37,6 +37,10 @@ yarn-error.log*
 .env.production.local
 
 # Arduino/ESP8266
+# Excluding firmware files from ignore
+!Web/OTA/firmware_*.bin
+!slave/*/build/esp8266.esp8266.generic/*.bin
+# Other Arduino/ESP build files
 *.bin
 *.elf
 *.map
