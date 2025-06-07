@@ -1,22 +1,33 @@
+#include <Arduino.h>
 #include "OTAHandler.h"
 #include "WiFiUDPHandler.h"
 #include "AnalogSensor.h"
 #include <ESP8266WiFi.h>
 
-// OTA Update Configuration
-#define OTA_SERVER "192.168.137.1"
-#define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.5"
+// These are defined by build flags in platformio.ini
+#ifndef DEVICE_ID
 #define DEVICE_ID "light_207"
+#endif
 
-// WiFi credentials
-const char* ssid = "ALICE";
-const char* password = "@channel";
+#ifndef CURRENT_VERSION
+#define CURRENT_VERSION "1.0.5"
+#endif
+
+void setup();
+void loop();
 
 // Pin definitions
 const int LDR_PIN = A0;       // Analog input for LDR
 const int LIGHT_PIN = 15;     // D8/GPIO15 for PWM output
 const int LED_PIN = LED_BUILTIN;
+
+// WiFi credentials
+const char* ssid = "ALICE";
+const char* password = "@channel";
+
+// OTA Update Configuration
+#define OTA_SERVER "192.168.137.1"
+#define OTA_PORT 5000
 
 // Light control parameters
 #define TARGET_LUX 500.0    // Target light level in lux
@@ -41,30 +52,6 @@ const long udpBroadcastInterval = 5000;  // Broadcast every 5 seconds
 
 unsigned long lastLightAdjust = 0;
 const long lightAdjustInterval = 100;  // Adjust light every 100ms
-
-void setup() {
-    Serial.begin(115200);
-    delay(100);
-    
-    // Setup pins
-    pinMode(LED_PIN, OUTPUT);
-    pinMode(LIGHT_PIN, OUTPUT);
-    analogWriteRange(1023);  // Set PWM range to 10 bits
-    digitalWrite(LED_PIN, HIGH);   // LED off initially (ESP8266 LED is active LOW)
-    analogWrite(LIGHT_PIN, 0);     // Light off initially
-    
-    ldrSensor.begin();
-    ldrSensor.loadCalibration();
-    
-    // Initialize UDP and OTA handlers
-    udpHandler.begin();
-    otaHandler.begin();
-    otaHandler.checkForUpdates();
-    
-    Serial.println("Device ready for OTA updates and UDP communication.");
-    Serial.println("Current version: " + String(CURRENT_VERSION));
-    Serial.println("Device ID: " + String(DEVICE_ID));
-}
 
 void handleCalibrationCommand(String message) {
     // Format: CAL:degree:coeff0:coeff1:coeff2
@@ -140,6 +127,30 @@ void adjustLight() {
 
     Serial.print(" PWM: ");
     Serial.println(currentPWM);
+}
+
+void setup() {
+    Serial.begin(115200);
+    delay(100);
+    
+    // Setup pins
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(LIGHT_PIN, OUTPUT);
+    analogWriteRange(1023);  // Set PWM range to 10 bits
+    digitalWrite(LED_PIN, HIGH);   // LED off initially (ESP8266 LED is active LOW)
+    analogWrite(LIGHT_PIN, 0);     // Light off initially
+    
+    ldrSensor.begin();
+    ldrSensor.loadCalibration();
+    
+    // Initialize UDP and OTA handlers
+    udpHandler.begin();
+    otaHandler.begin();
+    otaHandler.checkForUpdates();
+    
+    Serial.println("Device ready for OTA updates and UDP communication.");
+    Serial.println("Current version: " + String(CURRENT_VERSION));
+    Serial.println("Device ID: " + String(DEVICE_ID));
 }
 
 void loop() {
