@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.8"
+#define CURRENT_VERSION "1.0.15"
 #define DEVICE_ID "light_207"
 
 // WiFi credentials
@@ -90,6 +90,8 @@ void handleCalibrationCommand(String message) {
 }
 
 void handleUDPMessage(String message) {
+    Serial.print("Received command: ");
+    Serial.println(message);
     if (message == "ON") {
         lightState = true;
     } else if (message == "OFF") {
@@ -98,6 +100,32 @@ void handleUDPMessage(String message) {
         currentPWM = 0;
     } else if (message.startsWith("CAL:")) {
         handleCalibrationCommand(message);
+    }
+}
+
+void handleMeshCommand(String message) {
+    // Format: target_ip:command:ttl
+    int sep1 = message.indexOf(":");
+    int sep2 = message.indexOf(":", sep1 + 1);
+    if (sep1 == -1 || sep2 == -1) return;
+    String targetIpStr = message.substring(0, sep1);
+    String cmd = message.substring(sep1 + 1, sep2);
+    int ttl = message.substring(sep2 + 1).toInt();
+    IPAddress myIp = WiFi.localIP();
+    IPAddress targetIp;
+    if (!targetIp.fromString(targetIpStr)) return;
+    if (myIp == targetIp) {
+        handleUDPMessage(cmd);
+    } else if (ttl > 0) {
+        // Relay to target IP, decrement TTL
+        String relayMsg = targetIpStr + ":" + cmd + ":" + String(ttl - 1);
+        Serial.print("[MESH RELAY] Relaying to ");
+        Serial.print(targetIp);
+        Serial.print(" with TTL ");
+        Serial.println(ttl - 1);
+        udpHandler.sendTo(relayMsg.c_str(), targetIp, 4210);
+    } else {
+        Serial.println("[MESH RELAY] TTL expired, not relaying.");
     }
 }
 
@@ -159,11 +187,16 @@ void loop() {
         }
     }
 
-    // Check for incoming UDP messages
-    String response = udpHandler.receiveResponses(10);
-    if (response.length() > 0) {
-        handleUDPMessage(response);
+    // Check for incoming UDP messages (process all available)
+    while (true) {
+        String response = udpHandler.receiveResponses(10);
+        if (response.length() == 0) break;
+        Serial.print("[DEBUG] Raw UDP received: ");
+        Serial.println(response);
+        if (response.indexOf(":") > 0) {
+            handleMeshCommand(response);
+        } else {
+            handleUDPMessage(response);
+        }
     }
-
-    delay(10);  // Small delay to avoid busy loop
 }

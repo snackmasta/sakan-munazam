@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.10"
+#define CURRENT_VERSION "1.0.11"
 #define DEVICE_ID "lock_207"
 
 const char* ssid = "ALICE";
@@ -50,6 +50,26 @@ void setup() {
     Serial.println("ESP8266 ready. Waiting for commands...");
 }
 
+void handleMeshCommand(String message) {
+    int sep = message.indexOf(":");
+    if (sep == -1) return;
+    String targetId = message.substring(0, sep);
+    String cmd = message.substring(sep + 1);
+    if (targetId == DEVICE_ID) {
+        if (cmd == "UNLOCK") {
+            lockController.unlock();
+        } else if (cmd == "LOCK") {
+            lockController.lock();
+        } else {
+            Serial.println("Unknown mesh command: " + cmd);
+        }
+    } else {
+        // Relay to mesh (broadcast)
+        udpHandler.sendBroadcast(message.c_str());
+        Serial.println("Relayed mesh command: " + message);
+    }
+}
+
 void loop() {
     // 1. Check for card and send UID to master if detected
     if (isCardDetected()) {
@@ -66,15 +86,17 @@ void loop() {
     // 2. Always listen for UDP responses
     String data = udpHandler.receiveResponses(100); // Use a short timeout for responsiveness
     if (data != "") {
-        Serial.print("Received data: ");
-        Serial.println(data);
-
-        if (data == "UNLOCK") {
-            lockController.unlock();
-        } else if (data == "LOCK") {
-            lockController.lock();
+        // Mesh command: device_id:command
+        if (data.indexOf(":") > 0) {
+            handleMeshCommand(data);
         } else {
-            Serial.println("Unknown command received.");
+            if (data == "UNLOCK") {
+                lockController.unlock();
+            } else if (data == "LOCK") {
+                lockController.lock();
+            } else {
+                Serial.println("Unknown command received.");
+            }
         }
     }
 

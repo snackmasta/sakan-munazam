@@ -76,9 +76,10 @@ class UDPHandler:
         """Send control command to a light device."""
         device = self.device_manager.get_device(device_id)
         if device and device.device_type == DEVICE_TYPE_LIGHT:
-            self.sock.sendto(command.encode(), device.addr)
+            packet = f"{device_id}:{command}"
+            self.sock.sendto(packet.encode(), device.addr)
             log_command(device_id, command, device.addr)
-            print(f"[LIGHT] Sent {command} to {device_id}")
+            print(f"[LIGHT] Sent {packet} to {device_id}")
             return True
         return False
 

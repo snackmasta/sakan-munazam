@@ -5,6 +5,7 @@ import threading
 import queue
 import os
 import matplotlib
+import time
 matplotlib.use('Agg')  # Use non-interactive backend for safety
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -57,6 +58,8 @@ class MasterHMI(tk.Tk):
                 tk.Label(frame, text=name, width=10, anchor='w').pack(side='left')
                 tk.Button(frame, text='ON', width=7, command=lambda n=name: self.send_command(n, 'ON')).pack(side='left', padx=2)
                 tk.Button(frame, text='OFF', width=7, command=lambda n=name: self.send_command(n, 'OFF')).pack(side='left', padx=2)
+                tk.Button(frame, text='BROADCAST ON', width=12, command=lambda n=name: self.broadcast_mesh_command(n, 'ON')).pack(side='left', padx=2)
+                tk.Button(frame, text='BROADCAST OFF', width=12, command=lambda n=name: self.broadcast_mesh_command(n, 'OFF')).pack(side='left', padx=2)
 
         # Right panel: Trend chart
         right_panel = tk.LabelFrame(main_frame, text="Trend Visualization", font=("Arial", 10, "bold"), padx=8, pady=8)
@@ -205,6 +208,22 @@ class MasterHMI(tk.Tk):
     def destroy(self):
         self._stop_event.set()
         super().destroy()
+
+    def broadcast_mesh_command(self, target_device, command):
+        # Send mesh command as IP:COMMAND:TTL
+        info = DEVICES[target_device]
+        target_ip = info['ip']
+        mesh_message = f"{target_ip}:{command}:3"  # TTL=3 (or adjust as needed)
+        try:
+            for name, info in DEVICES.items():
+                if info['type'] in ('light', 'lock'):
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                        s.sendto(mesh_message.encode(), (info['ip'], info['port']))
+                        time.sleep(0.01)
+            self.log(f"Unicast mesh command to all: {mesh_message}")
+        except Exception as e:
+            self.log(f"Error unicasting mesh command: {e}")
+            messagebox.showerror('Error', f"Failed to unicast mesh command: {e}")
 
 if __name__ == '__main__':
     app = MasterHMI()
