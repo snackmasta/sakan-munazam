@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.11"
+#define CURRENT_VERSION "1.0.12"
 #define DEVICE_ID "lock_207"
 
 const char* ssid = "ALICE";
@@ -50,23 +50,43 @@ void setup() {
     Serial.println("ESP8266 ready. Waiting for commands...");
 }
 
+void handleUDPMessage(String message);
+
 void handleMeshCommand(String message) {
-    int sep = message.indexOf(":");
-    if (sep == -1) return;
-    String targetId = message.substring(0, sep);
-    String cmd = message.substring(sep + 1);
-    if (targetId == DEVICE_ID) {
-        if (cmd == "UNLOCK") {
-            lockController.unlock();
-        } else if (cmd == "LOCK") {
-            lockController.lock();
-        } else {
-            Serial.println("Unknown mesh command: " + cmd);
-        }
+    // Format: target_ip:command:ttl
+    int sep1 = message.indexOf(":");
+    int sep2 = message.indexOf(":", sep1 + 1);
+    if (sep1 == -1 || sep2 == -1) return;
+    String targetIpStr = message.substring(0, sep1);
+    String cmd = message.substring(sep1 + 1, sep2);
+    int ttl = message.substring(sep2 + 1).toInt();
+    IPAddress myIp = WiFi.localIP();
+    IPAddress targetIp;
+    if (!targetIp.fromString(targetIpStr)) return;
+    if (myIp == targetIp) {
+        handleUDPMessage(cmd);
+    } else if (ttl > 0) {
+        // Relay to target IP, decrement TTL
+        String relayMsg = targetIpStr + ":" + cmd + ":" + String(ttl - 1);
+        Serial.print("[MESH RELAY] Relaying to ");
+        Serial.print(targetIp);
+        Serial.print(" with TTL ");
+        Serial.println(ttl - 1);
+        udpHandler.sendTo(relayMsg.c_str(), targetIp, 4210);
     } else {
-        // Relay to mesh (broadcast)
-        udpHandler.sendBroadcast(message.c_str());
-        Serial.println("Relayed mesh command: " + message);
+        Serial.println("[MESH RELAY] TTL expired, not relaying.");
+    }
+}
+
+void handleUDPMessage(String message) {
+    Serial.print("Received command: ");
+    Serial.println(message);
+    if (message == "UNLOCK") {
+        lockController.unlock();
+    } else if (message == "LOCK") {
+        lockController.lock();
+    } else {
+        Serial.println("Unknown command received.");
     }
 }
 
@@ -90,13 +110,7 @@ void loop() {
         if (data.indexOf(":") > 0) {
             handleMeshCommand(data);
         } else {
-            if (data == "UNLOCK") {
-                lockController.unlock();
-            } else if (data == "LOCK") {
-                lockController.lock();
-            } else {
-                Serial.println("Unknown command received.");
-            }
+            handleUDPMessage(data);
         }
     }
 
