@@ -1,11 +1,9 @@
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
-import socket
-import threading
-import queue
 import os
 import matplotlib
 import time
+import threading
 matplotlib.use('Agg')  # Use non-interactive backend for safety
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -13,6 +11,7 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 from utils import sql
+from network import MasterNetworkHandler
 
 # Device info (update as needed)
 DEVICES = {
@@ -28,14 +27,18 @@ class MasterHMI(tk.Tk):
         self.title('Master HMI')
         self.geometry('800x600')
         self.create_widgets()
-        self.incoming_queue = queue.Queue()
-        self.udp_listen_port = 4210  # Use a different port than outgoing if needed
-        self._stop_event = threading.Event()
-        self.udp_thread = threading.Thread(target=self.listen_udp, daemon=True)
-        self.udp_thread.start()
-        self.after(100, self.process_incoming_queue)
         self.lux_data = []  # Store recent lux values for trend
         self.max_lux_points = 40  # Number of points to show in trend
+        self._stop_event = threading.Event()
+        # Networking handler
+        self.network = MasterNetworkHandler(
+            devices=DEVICES,
+            udp_listen_port=4210,
+            log_callback=self.log,
+            incoming_callback=self.log_incoming,
+            stop_event=self._stop_event
+        )
+        self.after(100, self.process_incoming_queue)
 
     def create_widgets(self):
         # Main layout: left (controls), right (trend), bottom (logs)
@@ -110,13 +113,9 @@ class MasterHMI(tk.Tk):
         tk.Button(db_frame, text='Check Access', command=lambda: self.check_user_access(self.user_id_entry.get(), self.ip_entry.get())).pack(side='left', padx=4)
 
     def send_command(self, device_name, command):
-        info = DEVICES[device_name]
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.sendto(command.encode(), (info['ip'], info['port']))
-            self.log(f"Sent {command} to {device_name} at {info['ip']}:{info['port']}")
+            self.network.send_command(device_name, command)
         except Exception as e:
-            self.log(f"Error sending to {device_name}: {e}")
             messagebox.showerror('Error', f"Failed to send command: {e}")
 
     def log(self, msg):
@@ -183,48 +182,8 @@ class MasterHMI(tk.Tk):
         self.lux_fig.tight_layout()
         self.lux_canvas.draw()
 
-    def listen_udp(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(("", self.udp_listen_port))
-        sock.settimeout(1.0)
-        while not self._stop_event.is_set():
-            try:
-                data, addr = sock.recvfrom(1024)
-                msg = f"From {addr}: {data.decode(errors='replace')}"
-                self.incoming_queue.put(msg)
-
-                # --- Automatic UID/IP matching and unlock broadcast ---
-                try:
-                    # Expecting format: device_id:UID (for lock devices)
-                    parts = data.decode(errors='replace').strip().split(":")
-                    if len(parts) >= 2:
-                        device_id = parts[0]
-                        uid = ":".join(parts[1:])
-                        # Only for lock devices
-                        if device_id.startswith("lock_"):
-                            ip_address = addr[0]
-                            # Check access
-                            if sql.is_access_allowed(uid, ip_address):
-                                # Find the device in DEVICES by IP
-                                for name, info in DEVICES.items():
-                                    if info['ip'] == ip_address and info['type'] == 'lock':
-                                        # Send mesh UNLOCK broadcast for this lock
-                                        self.broadcast_mesh_command(name, 'UNLOCK')
-                                        self.log(f"[AUTO] UID {uid} allowed for {ip_address}, sent UNLOCK broadcast.")
-                                        break
-                except Exception as e:
-                    self.log(f"[AUTO] Error in auto-unlock: {e}")
-                # --- End automatic matching ---
-            except socket.timeout:
-                continue
-            except Exception as e:
-                self.incoming_queue.put(f"UDP Listen error: {e}")
-        sock.close()
-
     def process_incoming_queue(self):
-        while not self.incoming_queue.empty():
-            msg = self.incoming_queue.get()
-            self.log_incoming(msg)
+        self.network.process_incoming_queue()
         self.after(100, self.process_incoming_queue)
 
     def tail_server_log(self, log_path="../server.log", n=20):
@@ -251,19 +210,9 @@ class MasterHMI(tk.Tk):
         super().destroy()
 
     def broadcast_mesh_command(self, target_device, command):
-        # Send mesh command as IP:COMMAND:TTL
-        info = DEVICES[target_device]
-        target_ip = info['ip']
-        mesh_message = f"{target_ip}:{command}:3"  # TTL=3 (or adjust as needed)
         try:
-            for name, info in DEVICES.items():
-                if info['type'] in ('light', 'lock'):
-                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                        s.sendto(mesh_message.encode(), (info['ip'], info['port']))
-                        time.sleep(0.01)
-            self.log(f"Unicast mesh command to all: {mesh_message}")
+            self.network.broadcast_mesh_command(target_device, command)
         except Exception as e:
-            self.log(f"Error unicasting mesh command: {e}")
             messagebox.showerror('Error', f"Failed to unicast mesh command: {e}")
 
     def show_user_ids(self):
