@@ -33,6 +33,11 @@ class LuxTrendLogic:
     def draw_lux_trend(self, ax, canvas):
         ax.clear()
         if not self.lux_data:
+            ax.set_ylim(0, 12)
+            ax.set_yticks([i for i in range(0, 13)])
+            ax.set_ylabel('Lux')
+            ax.set_xlabel('Sample')
+            ax.grid(True, linestyle='--', alpha=0.5)
             canvas.draw()
             return
         data_207 = [(i, lux) for i, (lux, color, dev) in enumerate([(v[0], v[1], v[2] if len(v) > 2 else None) for v in self.lux_data]) if dev == 'light_207']
@@ -43,6 +48,8 @@ class LuxTrendLogic:
         if data_208:
             x_208, y_208 = zip(*data_208)
             ax.plot(x_208, y_208, color='blue', label='light_208')
+        ax.set_ylim(0, 12)
+        ax.set_yticks([i for i in range(0, 13)])
         ax.set_ylabel('Lux')
         ax.set_xlabel('Sample')
         ax.legend(loc='upper right', fontsize=8)

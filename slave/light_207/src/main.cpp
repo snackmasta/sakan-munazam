@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.20"
+#define CURRENT_VERSION "1.0.22"
 #define DEVICE_ID "light_207"
 
 // WiFi credentials
@@ -19,7 +19,9 @@ const int LIGHT_PIN = 15;     // D8/GPIO15 for PWM output
 const int LED_PIN = LED_BUILTIN;
 
 // Light control parameters
-#define TARGET_LUX 500.0    // Target light level in lux
+// #define TARGET_LUX 500.0    // Target light level in lux
+// float targetLux = 500.0;    // Target light level in lux
+int targetLDR = 500;    // Target raw LDR value
 #define PWM_MIN 0
 #define PWM_MAX 1023
 #define LDR_FIXED_R 10000.0 // 10k fixed resistor in voltage divider
@@ -103,8 +105,12 @@ void handleUDPMessage(String message) {
         autoMode = false;
         Serial.println("Switched to MANUAL PWM mode");
     } else if (message == "PWM_AUTO") {
+        // When switching to AUTO, use the current raw LDR as the new target
+        int raw = ldrSensor.readRaw();
+        targetLDR = raw;
         autoMode = true;
-        Serial.println("Switched to AUTO PWM mode");
+        Serial.print("Switched to AUTO PWM mode, new targetLDR: ");
+        Serial.println(targetLDR);
     } else if (message.startsWith("PWM:")) {
         if (!autoMode) {
             int pwmVal = message.substring(4).toInt();
@@ -148,22 +154,14 @@ void adjustLight() {
     if (!lightState) return;
     if (autoMode) {
         int raw = ldrSensor.readRaw();
-        float currentLux = ldrSensor.calibratedLux(raw);
-        if (currentLux < 0) currentLux = ldrSensor.readLux(LDR_FIXED_R);
-
         // Debug output
         Serial.print("Raw: ");
         Serial.print(raw);
-        Serial.print(" Lux: ");
-        Serial.print(currentLux);
-
-        // Simple proportional control
-        float error = TARGET_LUX - currentLux;
+        // Simple proportional control using raw LDR
+        int error = targetLDR - raw;
         int adjustment = error * 0.5;  // Adjust sensitivity with this multiplier
-
         currentPWM = constrain(currentPWM + adjustment, PWM_MIN, PWM_MAX);
         analogWrite(LIGHT_PIN, currentPWM);
-
         Serial.print(" PWM: ");
         Serial.println(currentPWM);
     } else {
