@@ -1,0 +1,57 @@
+---
+config:
+  layout: elk
+  theme: base
+---
+flowchart TD
+    WebInterface["Web Interface"]
+    OTAServer["OTA Server (Node.js)"]
+    Master["Master Server (Python)"]
+    KEPServer["KEPServer/OPC"]
+    Light_207["Light Controller (light_207)"]
+    Light_208["Light Controller (light_208)"]
+    Lock_207["Lock Controller (lock_207)"]
+    Lock_208["Lock Controller (lock_208)"]
+
+    %% Core system connections
+    WebInterface -- HTTP --> OTAServer
+    WebInterface -- HTTP --> Master
+    WebInterface -- HTTP --> KEPServer
+    WebInterface -- HTTP --> Light_207
+    WebInterface -- HTTP --> Light_208
+    WebInterface -- HTTP --> Lock_207
+    WebInterface -- HTTP --> Lock_208
+    OTAServer -- HTTP --> Light_207
+    OTAServer -- HTTP --> Light_208
+    OTAServer -- HTTP --> Lock_207
+    OTAServer -- HTTP --> Lock_208
+    Master -- UDP --> Light_207
+    Master -- UDP --> Light_208
+    Master -- UDP --> Lock_207
+    Master -- UDP --> Lock_208
+    Light_207 -- UDP --> Master
+    Light_208 -- UDP --> Master
+    Lock_207 -- UDP --> Master
+    Lock_208 -- UDP --> Master
+    Master -- HTTP --> KEPServer
+
+    %% Mesh connections between all slave devices (bidirectional)
+    Light_207 -- UDP --> Light_208
+    Light_207 -- UDP --> Lock_207
+    Light_207 -- UDP --> Lock_208
+    Light_208 -- UDP --> Light_207
+    Light_208 -- UDP --> Lock_207
+    Light_208 -- UDP --> Lock_208
+    Lock_207 -- UDP --> Light_207
+    Lock_207 -- UDP --> Light_208
+    Lock_207 -- UDP --> Lock_208
+    Lock_208 -- UDP --> Light_207
+    Lock_208 -- UDP --> Light_208
+    Lock_208 -- UDP --> Lock_207
+
+    subgraph Devices
+        Light_207
+        Light_208
+        Lock_207
+        Lock_208
+    end
