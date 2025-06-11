@@ -50,6 +50,12 @@ void WiFiUDPHandler::sendBroadcast(const char* message) {
   _udp.endPacket();
 }
 
+void WiFiUDPHandler::sendTo(const char* message, IPAddress ip, uint16_t port) {
+    _udp.beginPacket(ip, port);
+    _udp.print(message);
+    _udp.endPacket();
+}
+
 String WiFiUDPHandler::receiveResponses(unsigned long timeoutMs) {
   unsigned long start = millis();
   while (millis() - start < timeoutMs) {

@@ -10,7 +10,7 @@
 #endif
 
 #ifndef CURRENT_VERSION
-#define CURRENT_VERSION "1.0.5"
+#define CURRENT_VERSION "1.0.7"
 #endif
 
 void setup();
@@ -48,7 +48,7 @@ const long blinkInterval = 1000;  // Blink every second
 bool ledState = false;
 
 unsigned long lastUDPBroadcast = 0;
-const long udpBroadcastInterval = 5000;  // Broadcast every 5 seconds
+const long udpBroadcastInterval = 500;  // Broadcast every 5 seconds
 
 unsigned long lastLightAdjust = 0;
 const long lightAdjustInterval = 100;  // Adjust light every 100ms
@@ -172,15 +172,20 @@ void loop() {
     // Periodically broadcast device status
     if (currentMillis - lastUDPBroadcast >= udpBroadcastInterval) {
         lastUDPBroadcast = currentMillis;
-        int raw = ldrSensor.readRaw();
-        float currentLux = ldrSensor.calibratedLux(raw);
-        if (currentLux < 0) currentLux = ldrSensor.readLux(LDR_FIXED_R);
-        String status = String(DEVICE_ID) + ":" + 
-                       (lightState ? "ON" : "OFF") + ":" +
-                       String(currentLux, 1) + ":" +
-                       String(currentPWM) + ":" +
-                       String(raw);
-        udpHandler.sendBroadcast(status.c_str());
+        if (lightState) { // Only send data when running
+            int raw = ldrSensor.readRaw();
+            float currentLux = ldrSensor.calibratedLux(raw);
+            if (currentLux < 0) currentLux = ldrSensor.readLux(LDR_FIXED_R);
+            String status = String(DEVICE_ID) + ":" + 
+                           (lightState ? "ON" : "OFF") + ":" +
+                           String(currentLux, 1) + ":" +
+                           String(currentPWM) + ":" +
+                           String(raw);
+            // Send UDP only to master, not broadcast
+            IPAddress masterIP(192,168,137,1); // Set to your master server IP
+            uint16_t masterPort = 4210;        // Set to your master server UDP port
+            udpHandler.sendTo(status.c_str(), masterIP, masterPort);
+        }
     }
 
     // Check for incoming UDP messages
