@@ -4,13 +4,14 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class HMIWidgets:
-    def __init__(self, master, devices, send_command_cb, broadcast_cb, check_user_access_cb, show_user_ids_cb):
+    def __init__(self, master, devices, send_command_cb, broadcast_cb, check_user_access_cb, show_user_ids_cb, set_pwm_cb=None):
         self.master = master
         self.devices = devices
         self.send_command_cb = send_command_cb
         self.broadcast_cb = broadcast_cb
         self.check_user_access_cb = check_user_access_cb
         self.show_user_ids_cb = show_user_ids_cb
+        self.set_pwm_cb = set_pwm_cb
         self.widgets = {}
 
     def build_layout(self):
@@ -43,6 +44,30 @@ class HMIWidgets:
                 tk.Button(frame, text='OFF', width=7, command=lambda n=name: self.send_command_cb(n, 'OFF')).pack(side='left', padx=2)
                 tk.Button(frame, text='BROADCAST ON', width=12, command=lambda n=name: self.broadcast_cb(n, 'ON')).pack(side='left', padx=2)
                 tk.Button(frame, text='BROADCAST OFF', width=12, command=lambda n=name: self.broadcast_cb(n, 'OFF')).pack(side='left', padx=2)
+                # PWM slider and AUTO/MANUAL toggle
+                if self.set_pwm_cb:
+                    pwm_mode = {'mode': 'auto'}  # mutable holder for mode
+                    def toggle_pwm_mode(slider, toggle_btn, device_name):
+                        if pwm_mode['mode'] == 'auto':
+                            pwm_mode['mode'] = 'manual'
+                            slider.config(state='normal')
+                            toggle_btn.config(text='MANUAL')
+                            self.send_command_cb(device_name, 'PWM_MANUAL')
+                        else:
+                            pwm_mode['mode'] = 'auto'
+                            slider.config(state='disabled')
+                            toggle_btn.config(text='AUTO')
+                            self.send_command_cb(device_name, 'PWM_AUTO')
+                    pwm_slider = tk.Scale(frame, from_=0, to=1023, orient='horizontal', length=120, label='PWM',
+                                         command=lambda val, n=name: self.set_pwm_cb(n, int(val)))
+                    pwm_slider.set(128)
+                    pwm_slider.config(state='disabled')
+                    pwm_slider.pack(side='left', padx=4)
+                    toggle_btn = tk.Button(frame, text='AUTO', width=7)
+                    toggle_btn.pack(side='left', padx=2)
+                    toggle_btn.config(command=lambda s=pwm_slider, b=toggle_btn, n=name: toggle_pwm_mode(s, b, n))
+                    self.widgets[f'{name}_pwm_slider'] = pwm_slider
+                    self.widgets[f'{name}_pwm_toggle_btn'] = toggle_btn
         self.widgets['lock_frame'] = lock_frame
         self.widgets['light_frame'] = light_frame
 

@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.15"
+#define CURRENT_VERSION "1.0.20"
 #define DEVICE_ID "light_208"
 
 // WiFi credentials
@@ -26,6 +26,7 @@ const int LED_PIN = LED_BUILTIN;
 
 bool lightState = false;     // Current state of the light
 int currentPWM = 0;         // Current PWM value
+bool autoMode = true; // true = AUTO, false = MANUAL
 
 OTAHandler otaHandler(OTA_SERVER, OTA_PORT, DEVICE_ID, CURRENT_VERSION);
 WiFiUDPHandler udpHandler(ssid, password);
@@ -98,6 +99,20 @@ void handleUDPMessage(String message) {
         lightState = false;
         analogWrite(LIGHT_PIN, 0);
         currentPWM = 0;
+    } else if (message == "PWM_MANUAL") {
+        autoMode = false;
+        Serial.println("Switched to MANUAL PWM mode");
+    } else if (message == "PWM_AUTO") {
+        autoMode = true;
+        Serial.println("Switched to AUTO PWM mode");
+    } else if (message.startsWith("PWM:")) {
+        if (!autoMode) {
+            int pwmVal = message.substring(4).toInt();
+            currentPWM = constrain(pwmVal, PWM_MIN, PWM_MAX);
+            analogWrite(LIGHT_PIN, currentPWM);
+            Serial.print("Manual PWM set to: ");
+            Serial.println(currentPWM);
+        }
     } else if (message.startsWith("CAL:")) {
         handleCalibrationCommand(message);
     }
@@ -131,25 +146,31 @@ void handleMeshCommand(String message) {
 
 void adjustLight() {
     if (!lightState) return;
-    int raw = ldrSensor.readRaw();
-    float currentLux = ldrSensor.calibratedLux(raw);
-    if (currentLux < 0) currentLux = ldrSensor.readLux(LDR_FIXED_R);
+    if (autoMode) {
+        int raw = ldrSensor.readRaw();
+        float currentLux = ldrSensor.calibratedLux(raw);
+        if (currentLux < 0) currentLux = ldrSensor.readLux(LDR_FIXED_R);
 
-    // Debug output
-    Serial.print("Raw: ");
-    Serial.print(raw);
-    Serial.print(" Lux: ");
-    Serial.print(currentLux);
+        // Debug output
+        Serial.print("Raw: ");
+        Serial.print(raw);
+        Serial.print(" Lux: ");
+        Serial.print(currentLux);
 
-    // Simple proportional control
-    float error = TARGET_LUX - currentLux;
-    int adjustment = error * 0.5;  // Adjust sensitivity with this multiplier
+        // Simple proportional control
+        float error = TARGET_LUX - currentLux;
+        int adjustment = error * 0.5;  // Adjust sensitivity with this multiplier
 
-    currentPWM = constrain(currentPWM + adjustment, PWM_MIN, PWM_MAX);
-    analogWrite(LIGHT_PIN, currentPWM);
+        currentPWM = constrain(currentPWM + adjustment, PWM_MIN, PWM_MAX);
+        analogWrite(LIGHT_PIN, currentPWM);
 
-    Serial.print(" PWM: ");
-    Serial.println(currentPWM);
+        Serial.print(" PWM: ");
+        Serial.println(currentPWM);
+    } else {
+        // Manual mode: PWM set directly, nothing to do here
+        Serial.print("Manual mode PWM: ");
+        Serial.println(currentPWM);
+    }
 }
 
 void loop() {
@@ -193,6 +214,13 @@ void loop() {
         if (response.length() == 0) break;
         Serial.print("[DEBUG] Raw UDP received: ");
         Serial.println(response);
+        if (response.startsWith("PWM:") && !autoMode) {
+            int pwmVal = response.substring(4).toInt();
+            currentPWM = constrain(pwmVal, PWM_MIN, PWM_MAX);
+            analogWrite(LIGHT_PIN, currentPWM);
+            Serial.print("[DEBUG] Manual override PWM: ");
+            Serial.println(currentPWM);
+        }
         if (response.indexOf(":") > 0) {
             handleMeshCommand(response);
         } else {

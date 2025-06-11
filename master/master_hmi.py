@@ -45,7 +45,8 @@ class MasterHMI(tk.Tk):
             send_command_cb=self.send_command,
             broadcast_cb=self.broadcast_mesh_command,
             check_user_access_cb=self.check_user_access,
-            show_user_ids_cb=self.show_user_ids
+            show_user_ids_cb=self.show_user_ids,
+            set_pwm_cb=self.set_pwm
         ).build_layout()
         # Assign widget references
         self.log_area = self.widgets['log_area']
@@ -128,6 +129,13 @@ class MasterHMI(tk.Tk):
             messagebox.showinfo('Access', f'User {user_id} is allowed for {ip_address}')
         else:
             messagebox.showwarning('Access', f'User {user_id} is NOT allowed for {ip_address}')
+
+    def set_pwm(self, device_name, pwm_value):
+        """Send PWM value to the specified light device."""
+        try:
+            self.send_command(device_name, f'PWM:{pwm_value}')
+        except Exception as e:
+            messagebox.showerror('Error', f"Failed to set PWM: {e}")
 
 if __name__ == '__main__':
     app = MasterHMI()
