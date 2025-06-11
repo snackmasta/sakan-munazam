@@ -10,6 +10,7 @@ class WiFiUDPHandler {
     void begin();
     void sendBroadcast(const char* message);
     String receiveResponses(unsigned long timeoutMs = 3000);
+    void sendTo(const char* message, IPAddress ip, uint16_t port);
 
   private:
     const char* _ssid;

@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.6"
+#define CURRENT_VERSION "1.0.9"
 #define DEVICE_ID "lock_208"
 
 const char* ssid = "ALICE";
@@ -14,10 +14,14 @@ const char* password = "@channel";
 
 // Define the GPIO pin for the lock control
 #define LOCK_GPIO_PIN 15
+#define MASTER_UDP_PORT 4210
 
 WiFiUDPHandler udpHandler(ssid, password);
 LockControl lockController(LOCK_GPIO_PIN);
 OTAHandler otaHandler(OTA_SERVER, OTA_PORT, DEVICE_ID, CURRENT_VERSION);
+
+// Define master IP as IPAddress object
+IPAddress masterIp(192,168,137,1);
 
 void setup() {
     Serial.begin(115200);
@@ -47,14 +51,15 @@ void setup() {
 }
 
 void loop() {
-    // 1. Check for card and broadcast UID if detected
+    // 1. Check for card and send UID to master if detected
     if (isCardDetected()) {
         String uid = getCardUID();
-        String message = String(DEVICE_ID) + ":" + uid;  // Format: "lock_208:044743127A6A80"
+        String message = String(DEVICE_ID) + ":" + uid;
         Serial.println("Card detected: " + uid);
         Serial.println("Sending: " + message);
         
-        udpHandler.sendBroadcast(message.c_str());
+        // Send UDP message directly to master (unicast, not broadcast)
+        udpHandler.sendTo(message.c_str(), masterIp, MASTER_UDP_PORT);
         delay(10);
     }
 

@@ -1,4 +1,4 @@
-  #include "WiFiUDPHandler.h"
+#include "WiFiUDPHandler.h"
 
   WiFiUDPHandler::WiFiUDPHandler(const char* ssid, const char* password, int port)
     : _ssid(ssid), _password(password), _port(port) {}
@@ -49,6 +49,12 @@
     _udp.print(message);
     _udp.endPacket();
     // Serial.println("Broadcast sent.");
+  }
+
+  void WiFiUDPHandler::sendTo(const char* message, IPAddress ip, uint16_t port) {
+    _udp.beginPacket(ip, port);
+    _udp.print(message);
+    _udp.endPacket();
   }
 
   String WiFiUDPHandler::receiveResponses(unsigned long timeoutMs) {
