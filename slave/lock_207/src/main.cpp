@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.9"
+#define CURRENT_VERSION "1.0.10"
 #define DEVICE_ID "lock_207"
 
 const char* ssid = "ALICE";

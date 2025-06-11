@@ -1,4 +1,5 @@
 #include "OTAHandler.h"
+#include <WiFiUdp.h>
 
 OTAHandler::OTAHandler(const char* serverAddress, int serverPort, const char* deviceId, const char* currentVersion) 
     : _serverAddress(serverAddress), 
@@ -96,8 +97,20 @@ void OTAHandler::checkForUpdates() {
         String firmwareUrl = String("http://") + _serverAddress + ":" + _serverPort + "/firmware?deviceId=" + _deviceId;
         Serial.print("[OTA] Firmware download URL: ");
         Serial.println(firmwareUrl);
-        
+
         ESPhttpUpdate.rebootOnUpdate(true);
+        // --- OTA Progress Reporting via UDP ---
+        static WiFiUDP udp;
+        auto progressCb = [&](size_t progress, size_t total) {
+            int percent = (progress * 100) / total;
+            char msg[64];
+            snprintf(msg, sizeof(msg), "OTA_PROGRESS:%s:%d", _deviceId, percent);
+            udp.beginPacket(IPAddress(192,168,137,1), 4210);
+            udp.write((uint8_t*)msg, strlen(msg));
+            udp.endPacket();
+        };
+        ESPhttpUpdate.onProgress(progressCb);
+        // --- End OTA Progress Reporting ---
         t_httpUpdate_return ret = ESPhttpUpdate.update(client, firmwareUrl, _currentVersion);
         
         switch (ret) {
