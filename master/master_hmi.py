@@ -21,7 +21,7 @@ class MasterHMI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('Master HMI')
-        self.geometry('600x500')
+        self.geometry('800x600')
         self.create_widgets()
         self.incoming_queue = queue.Queue()
         self.udp_listen_port = 4210  # Use a different port than outgoing if needed
@@ -33,35 +33,60 @@ class MasterHMI(tk.Tk):
         self.max_lux_points = 40  # Number of points to show in trend
 
     def create_widgets(self):
-        row = 0
+        # Main layout: left (controls), right (trend), bottom (logs)
+        main_frame = tk.Frame(self)
+        main_frame.pack(fill='both', expand=True)
+
+        # Left panel: Device controls
+        left_panel = tk.LabelFrame(main_frame, text="Device Controls", font=("Arial", 10, "bold"), padx=8, pady=8)
+        left_panel.grid(row=0, column=0, sticky='nsw', padx=8, pady=8)
+        lock_frame = tk.LabelFrame(left_panel, text="Locks", font=("Arial", 9, "bold"), padx=4, pady=4)
+        lock_frame.pack(fill='x', pady=(0,8))
+        light_frame = tk.LabelFrame(left_panel, text="Lights", font=("Arial", 9, "bold"), padx=4, pady=4)
+        light_frame.pack(fill='x')
         for name, info in DEVICES.items():
-            frame = tk.Frame(self)
-            frame.grid(row=row, column=0, padx=10, pady=5, sticky='w')
-            tk.Label(frame, text=name).pack(side='left')
             if info['type'] == 'lock':
-                tk.Button(frame, text='LOCK', command=lambda n=name: self.send_command(n, 'LOCK')).pack(side='left', padx=5)
-                tk.Button(frame, text='UNLOCK', command=lambda n=name: self.send_command(n, 'UNLOCK')).pack(side='left', padx=5)
+                frame = tk.Frame(lock_frame)
+                frame.pack(fill='x', pady=2)
+                tk.Label(frame, text=name, width=10, anchor='w').pack(side='left')
+                tk.Button(frame, text='LOCK', width=7, command=lambda n=name: self.send_command(n, 'LOCK')).pack(side='left', padx=2)
+                tk.Button(frame, text='UNLOCK', width=7, command=lambda n=name: self.send_command(n, 'UNLOCK')).pack(side='left', padx=2)
             elif info['type'] == 'light':
-                tk.Button(frame, text='ON', command=lambda n=name: self.send_command(n, 'ON')).pack(side='left', padx=5)
-                tk.Button(frame, text='OFF', command=lambda n=name: self.send_command(n, 'OFF')).pack(side='left', padx=5)
-            row += 1
-        self.log_area = scrolledtext.ScrolledText(self, width=60, height=7, state='disabled')
-        self.log_area.grid(row=row, column=0, padx=10, pady=5)
-        row += 1
-        self.incoming_log_area = scrolledtext.ScrolledText(self, width=60, height=7, state='disabled')
-        self.incoming_log_area.grid(row=row, column=0, padx=10, pady=5)
-        tk.Label(self, text='Outgoing Log').grid(row=row-1, column=1, sticky='nw')
-        tk.Label(self, text='Incoming Log').grid(row=row, column=1, sticky='nw')
-        # Trend summary (add lux trend chart placeholder)
-        trend_frame = tk.LabelFrame(self, text="Trend Summary Table", font=("Arial", 10, "bold"), bg="#f0f0f0")
-        trend_frame.grid(row=row+1, column=0, padx=10, pady=5, sticky='ew')
-        tk.Label(trend_frame, text="Lux Trend", font=("Arial", 10, "bold"), bg="#f0f0f0").pack(anchor="w", padx=5, pady=(5,0))
-        # Remove old Canvas, add matplotlib Figure
-        self.lux_fig = Figure(figsize=(2.8, 1.2), dpi=80)
+                frame = tk.Frame(light_frame)
+                frame.pack(fill='x', pady=2)
+                tk.Label(frame, text=name, width=10, anchor='w').pack(side='left')
+                tk.Button(frame, text='ON', width=7, command=lambda n=name: self.send_command(n, 'ON')).pack(side='left', padx=2)
+                tk.Button(frame, text='OFF', width=7, command=lambda n=name: self.send_command(n, 'OFF')).pack(side='left', padx=2)
+
+        # Right panel: Trend chart
+        right_panel = tk.LabelFrame(main_frame, text="Trend Visualization", font=("Arial", 10, "bold"), padx=8, pady=8)
+        right_panel.grid(row=0, column=1, sticky='nsew', padx=8, pady=8)
+        main_frame.grid_columnconfigure(1, weight=1)
+        main_frame.grid_rowconfigure(0, weight=1)
+        tk.Label(right_panel, text="Lux Trend", font=("Arial", 10, "bold")).pack(anchor="w", padx=5, pady=(5,0))
+        self.lux_fig = Figure(figsize=(3.5, 1.5), dpi=90)
         self.lux_ax = self.lux_fig.add_subplot(111)
-        self.lux_canvas = FigureCanvasTkAgg(self.lux_fig, master=trend_frame)
+        self.lux_canvas = FigureCanvasTkAgg(self.lux_fig, master=right_panel)
         self.lux_canvas_widget = self.lux_canvas.get_tk_widget()
-        self.lux_canvas_widget.pack(padx=5, pady=5)
+        self.lux_canvas_widget.pack(padx=5, pady=5, fill='both', expand=True)
+
+        # Bottom panel: Logs
+        bottom_panel = tk.LabelFrame(self, text="Logs", font=("Arial", 10, "bold"), padx=8, pady=8)
+        bottom_panel.pack(fill='x', padx=8, pady=(0,8), side='bottom')
+        log_frame = tk.Frame(bottom_panel)
+        log_frame.pack(fill='x')
+        # Outgoing log
+        out_frame = tk.Frame(log_frame)
+        out_frame.pack(side='left', fill='both', expand=True, padx=(0,8))
+        tk.Label(out_frame, text='Outgoing Log', font=("Arial", 9, "bold")).pack(anchor='w')
+        self.log_area = scrolledtext.ScrolledText(out_frame, width=40, height=7, state='disabled')
+        self.log_area.pack(fill='both', expand=True)
+        # Incoming log
+        in_frame = tk.Frame(log_frame)
+        in_frame.pack(side='left', fill='both', expand=True)
+        tk.Label(in_frame, text='Incoming Log', font=("Arial", 9, "bold")).pack(anchor='w')
+        self.incoming_log_area = scrolledtext.ScrolledText(in_frame, width=40, height=7, state='disabled')
+        self.incoming_log_area.pack(fill='both', expand=True)
 
     def send_command(self, device_name, command):
         info = DEVICES[device_name]
