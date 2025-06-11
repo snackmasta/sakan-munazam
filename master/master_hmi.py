@@ -4,6 +4,10 @@ import socket
 import threading
 import queue
 import os
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for safety
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 # Device info (update as needed)
 DEVICES = {
@@ -52,8 +56,12 @@ class MasterHMI(tk.Tk):
         trend_frame = tk.LabelFrame(self, text="Trend Summary Table", font=("Arial", 10, "bold"), bg="#f0f0f0")
         trend_frame.grid(row=row+1, column=0, padx=10, pady=5, sticky='ew')
         tk.Label(trend_frame, text="Lux Trend", font=("Arial", 10, "bold"), bg="#f0f0f0").pack(anchor="w", padx=5, pady=(5,0))
-        self.lux_canvas = tk.Canvas(trend_frame, width=220, height=80, bg="white", bd=1, relief="sunken")
-        self.lux_canvas.pack(padx=5, pady=5)
+        # Remove old Canvas, add matplotlib Figure
+        self.lux_fig = Figure(figsize=(2.8, 1.2), dpi=80)
+        self.lux_ax = self.lux_fig.add_subplot(111)
+        self.lux_canvas = FigureCanvasTkAgg(self.lux_fig, master=trend_frame)
+        self.lux_canvas_widget = self.lux_canvas.get_tk_widget()
+        self.lux_canvas_widget.pack(padx=5, pady=5)
 
     def send_command(self, device_name, command):
         info = DEVICES[device_name]
@@ -83,10 +91,13 @@ class MasterHMI(tk.Tk):
         # Only treat the part with a decimal as lux, color by device
         try:
             color = 'blue'  # default
+            dev = None
             if 'light_207' in msg:
                 color = 'red'
+                dev = 'light_207'
             elif 'light_208' in msg:
                 color = 'blue'
+                dev = 'light_208'
             if 'light_' in msg:
                 parts = msg.split(':')
                 for part in parts:
@@ -94,7 +105,8 @@ class MasterHMI(tk.Tk):
                     if '.' in part:
                         try:
                             lux = float(part)
-                            self.lux_data.append((lux, color))
+                            # Store (lux, color, dev) for matplotlib separation
+                            self.lux_data.append((lux, color, dev))
                             if len(self.lux_data) > self.max_lux_points:
                                 self.lux_data = self.lux_data[-self.max_lux_points:]
                             self._draw_lux_trend()
@@ -105,28 +117,25 @@ class MasterHMI(tk.Tk):
             pass
 
     def _draw_lux_trend(self):
-        self.lux_canvas.delete('all')
+        self.lux_ax.clear()
         if not self.lux_data:
+            self.lux_canvas.draw()
             return
-        w = int(self.lux_canvas['width'])
-        h = int(self.lux_canvas['height'])
-        lux_values = [v[0] for v in self.lux_data]
-        max_lux = max(lux_values) if lux_values else 1
-        min_lux = min(lux_values) if lux_values else 0
-        span = max(max_lux - min_lux, 1e-3)
-        points = []
-        for i, (lux, color) in enumerate(self.lux_data):
-            x = int(i * w / max(1, len(self.lux_data)-1))
-            y = h - int((lux - min_lux) / span * (h-10)) - 5
-            points.append((x, y, color))
-        for i in range(1, len(points)):
-            self.lux_canvas.create_line(points[i-1][0], points[i-1][1], points[i][0], points[i][1], fill=points[i][2], width=2)
-        # Draw axis
-        self.lux_canvas.create_line(0, h-1, w, h-1, fill='black')
-        self.lux_canvas.create_line(0, 0, 0, h, fill='black')
-        # Draw min/max labels
-        self.lux_canvas.create_text(20, 10, text=f"{max_lux:.1f}", anchor='nw', fill='black', font=("Arial", 8))
-        self.lux_canvas.create_text(20, h-15, text=f"{min_lux:.1f}", anchor='sw', fill='black', font=("Arial", 8))
+        # Separate data by device
+        data_207 = [(i, lux) for i, (lux, color, dev) in enumerate([(v[0], v[1], v[2] if len(v) > 2 else None) for v in self.lux_data]) if dev == 'light_207']
+        data_208 = [(i, lux) for i, (lux, color, dev) in enumerate([(v[0], v[1], v[2] if len(v) > 2 else None) for v in self.lux_data]) if dev == 'light_208']
+        if data_207:
+            x_207, y_207 = zip(*data_207)
+            self.lux_ax.plot(x_207, y_207, color='red', label='light_207')
+        if data_208:
+            x_208, y_208 = zip(*data_208)
+            self.lux_ax.plot(x_208, y_208, color='blue', label='light_208')
+        self.lux_ax.set_ylabel('Lux')
+        self.lux_ax.set_xlabel('Sample')
+        self.lux_ax.legend(loc='upper right', fontsize=8)
+        self.lux_ax.grid(True, linestyle='--', alpha=0.5)
+        self.lux_fig.tight_layout()
+        self.lux_canvas.draw()
 
     def listen_udp(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
