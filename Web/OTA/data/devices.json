@@ -1,18 +1,18 @@
 {
   "lock_207": {
-    "version": "1.0.6",
+    "version": "1.0.12",
     "file": "firmware_lock_207.bin"
   },
   "lock_208": {
-    "version": "1.0.6",
+    "version": "1.0.12",
     "file": "firmware_lock_208.bin"
   },
   "light_207": {
-    "version": "1.0.5",
+    "version": "1.0.23",
     "file": "firmware_light_207.bin"
   },
   "light_208": {
-    "version": "1.0.5",
+    "version": "1.0.23",
     "file": "firmware_light_208.bin"
   }
 }
