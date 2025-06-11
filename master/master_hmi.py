@@ -13,6 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 from utils import sql
 from network import MasterNetworkHandler
 from gui import HMIWidgets
+from logic import LuxTrendLogic
 
 # Device info (update as needed)
 DEVICES = {
@@ -27,8 +28,7 @@ class MasterHMI(tk.Tk):
         super().__init__()
         self.title('Master HMI')
         self.geometry('800x600')
-        self.lux_data = []  # Store recent lux values for trend
-        self.max_lux_points = 40  # Number of points to show in trend
+        self.lux_logic = LuxTrendLogic(max_lux_points=40)
         self._stop_event = threading.Event()
         # Networking handler
         self.network = MasterNetworkHandler(
@@ -79,54 +79,10 @@ class MasterHMI(tk.Tk):
         self._update_lux_from_msg(msg)
 
     def _update_lux_from_msg(self, msg):
-        # Only treat the part with a decimal as lux, color by device
-        try:
-            color = 'blue'  # default
-            dev = None
-            if 'light_207' in msg:
-                color = 'red'
-                dev = 'light_207'
-            elif 'light_208' in msg:
-                color = 'blue'
-                dev = 'light_208'
-            if 'light_' in msg:
-                parts = msg.split(':')
-                for part in parts:
-                    part = part.strip()
-                    if '.' in part:
-                        try:
-                            lux = float(part)
-                            # Store (lux, color, dev) for matplotlib separation
-                            self.lux_data.append((lux, color, dev))
-                            if len(self.lux_data) > self.max_lux_points:
-                                self.lux_data = self.lux_data[-self.max_lux_points:]
-                            self._draw_lux_trend()
-                            break
-                        except ValueError:
-                            continue
-        except Exception:
-            pass
+        self.lux_logic.update_lux_from_msg(msg, lambda: self.lux_logic.draw_lux_trend(self.lux_ax, self.lux_canvas))
 
     def _draw_lux_trend(self):
-        self.lux_ax.clear()
-        if not self.lux_data:
-            self.lux_canvas.draw()
-            return
-        # Separate data by device
-        data_207 = [(i, lux) for i, (lux, color, dev) in enumerate([(v[0], v[1], v[2] if len(v) > 2 else None) for v in self.lux_data]) if dev == 'light_207']
-        data_208 = [(i, lux) for i, (lux, color, dev) in enumerate([(v[0], v[1], v[2] if len(v) > 2 else None) for v in self.lux_data]) if dev == 'light_208']
-        if data_207:
-            x_207, y_207 = zip(*data_207)
-            self.lux_ax.plot(x_207, y_207, color='red', label='light_207')
-        if data_208:
-            x_208, y_208 = zip(*data_208)
-            self.lux_ax.plot(x_208, y_208, color='blue', label='light_208')
-        self.lux_ax.set_ylabel('Lux')
-        self.lux_ax.set_xlabel('Sample')
-        self.lux_ax.legend(loc='upper right', fontsize=8)
-        self.lux_ax.grid(True, linestyle='--', alpha=0.5)
-        self.lux_fig.tight_layout()
-        self.lux_canvas.draw()
+        self.lux_logic.draw_lux_trend(self.lux_ax, self.lux_canvas)
 
     def process_incoming_queue(self):
         self.network.process_incoming_queue()

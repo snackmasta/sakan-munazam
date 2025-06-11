@@ -3,6 +3,7 @@ import threading
 import queue
 import time
 from utils import sql
+from threading import Timer
 
 class MasterNetworkHandler:
     def __init__(self, devices, udp_listen_port, log_callback, incoming_callback, stop_event=None):
@@ -60,8 +61,11 @@ class MasterNetworkHandler:
                             if sql.is_access_allowed(uid, ip_address):
                                 for name, info in self.devices.items():
                                     if info['ip'] == ip_address and info['type'] == 'lock':
+                                        # Send mesh UNLOCK broadcast for this lock
                                         self.broadcast_mesh_command(name, 'UNLOCK')
                                         self.log_callback(f"[AUTO] UID {uid} allowed for {ip_address}, sent UNLOCK broadcast.")
+                                        # Schedule LOCK broadcast after 2 seconds
+                                        Timer(2.0, lambda: self.broadcast_mesh_command(name, 'LOCK')).start()
                                         break
                 except Exception as e:
                     self.log_callback(f"[AUTO] Error in auto-unlock: {e}")
