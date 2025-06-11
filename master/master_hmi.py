@@ -9,6 +9,10 @@ import time
 matplotlib.use('Agg')  # Use non-interactive backend for safety
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
+from utils import sql
 
 # Device info (update as needed)
 DEVICES = {
@@ -52,6 +56,8 @@ class MasterHMI(tk.Tk):
                 tk.Label(frame, text=name, width=10, anchor='w').pack(side='left')
                 tk.Button(frame, text='LOCK', width=7, command=lambda n=name: self.send_command(n, 'LOCK')).pack(side='left', padx=2)
                 tk.Button(frame, text='UNLOCK', width=7, command=lambda n=name: self.send_command(n, 'UNLOCK')).pack(side='left', padx=2)
+                tk.Button(frame, text='BROADCAST LOCK', width=14, command=lambda n=name: self.broadcast_mesh_command(n, 'LOCK')).pack(side='left', padx=2)
+                tk.Button(frame, text='BROADCAST UNLOCK', width=14, command=lambda n=name: self.broadcast_mesh_command(n, 'UNLOCK')).pack(side='left', padx=2)
             elif info['type'] == 'light':
                 frame = tk.Frame(light_frame)
                 frame.pack(fill='x', pady=2)
@@ -90,6 +96,18 @@ class MasterHMI(tk.Tk):
         tk.Label(in_frame, text='Incoming Log', font=("Arial", 9, "bold")).pack(anchor='w')
         self.incoming_log_area = scrolledtext.ScrolledText(in_frame, width=40, height=7, state='disabled')
         self.incoming_log_area.pack(fill='both', expand=True)
+
+        # Add SQL DB controls
+        db_frame = tk.LabelFrame(self, text="SQL DB Tools", font=("Arial", 10, "bold"), padx=8, pady=8)
+        db_frame.pack(fill='x', padx=8, pady=(0,8), side='bottom')
+        tk.Button(db_frame, text='Show All User IDs', command=self.show_user_ids).pack(side='left', padx=4)
+        tk.Label(db_frame, text='Check Access for User ID:').pack(side='left', padx=4)
+        self.user_id_entry = tk.Entry(db_frame, width=12)
+        self.user_id_entry.pack(side='left', padx=2)
+        tk.Label(db_frame, text='IP:').pack(side='left', padx=2)
+        self.ip_entry = tk.Entry(db_frame, width=15)
+        self.ip_entry.pack(side='left', padx=2)
+        tk.Button(db_frame, text='Check Access', command=lambda: self.check_user_access(self.user_id_entry.get(), self.ip_entry.get())).pack(side='left', padx=4)
 
     def send_command(self, device_name, command):
         info = DEVICES[device_name]
@@ -174,6 +192,29 @@ class MasterHMI(tk.Tk):
                 data, addr = sock.recvfrom(1024)
                 msg = f"From {addr}: {data.decode(errors='replace')}"
                 self.incoming_queue.put(msg)
+
+                # --- Automatic UID/IP matching and unlock broadcast ---
+                try:
+                    # Expecting format: device_id:UID (for lock devices)
+                    parts = data.decode(errors='replace').strip().split(":")
+                    if len(parts) >= 2:
+                        device_id = parts[0]
+                        uid = ":".join(parts[1:])
+                        # Only for lock devices
+                        if device_id.startswith("lock_"):
+                            ip_address = addr[0]
+                            # Check access
+                            if sql.is_access_allowed(uid, ip_address):
+                                # Find the device in DEVICES by IP
+                                for name, info in DEVICES.items():
+                                    if info['ip'] == ip_address and info['type'] == 'lock':
+                                        # Send mesh UNLOCK broadcast for this lock
+                                        self.broadcast_mesh_command(name, 'UNLOCK')
+                                        self.log(f"[AUTO] UID {uid} allowed for {ip_address}, sent UNLOCK broadcast.")
+                                        break
+                except Exception as e:
+                    self.log(f"[AUTO] Error in auto-unlock: {e}")
+                # --- End automatic matching ---
             except socket.timeout:
                 continue
             except Exception as e:
@@ -224,6 +265,18 @@ class MasterHMI(tk.Tk):
         except Exception as e:
             self.log(f"Error unicasting mesh command: {e}")
             messagebox.showerror('Error', f"Failed to unicast mesh command: {e}")
+
+    def show_user_ids(self):
+        user_ids = sql.get_all_user_ids()
+        msg = 'User IDs in DB:\n' + '\n'.join(user_ids)
+        messagebox.showinfo('User IDs', msg)
+
+    def check_user_access(self, user_id, ip_address):
+        allowed = sql.is_access_allowed(user_id, ip_address)
+        if allowed:
+            messagebox.showinfo('Access', f'User {user_id} is allowed for {ip_address}')
+        else:
+            messagebox.showwarning('Access', f'User {user_id} is NOT allowed for {ip_address}')
 
 if __name__ == '__main__':
     app = MasterHMI()
