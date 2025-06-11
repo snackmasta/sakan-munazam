@@ -8,6 +8,7 @@ AnalogSensor::AnalogSensor(uint8_t pin, int inMin, int inMax, int outMin, int ou
 
 void AnalogSensor::begin() {
   // No pinMode needed for analog inputs on ESP8266
+  loadCalibration();
 }
 
 int AnalogSensor::readRaw() {

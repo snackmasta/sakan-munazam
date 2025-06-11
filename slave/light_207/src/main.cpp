@@ -1,33 +1,22 @@
-#include <Arduino.h>
 #include "OTAHandler.h"
 #include "WiFiUDPHandler.h"
 #include "AnalogSensor.h"
 #include <ESP8266WiFi.h>
 
-// These are defined by build flags in platformio.ini
-#ifndef DEVICE_ID
+// OTA Update Configuration
+#define OTA_SERVER "192.168.137.1"
+#define OTA_PORT 5000
+#define CURRENT_VERSION "1.0.8"
 #define DEVICE_ID "light_207"
-#endif
-
-#ifndef CURRENT_VERSION
-#define CURRENT_VERSION "1.0.7"
-#endif
-
-void setup();
-void loop();
-
-// Pin definitions
-const int LDR_PIN = A0;       // Analog input for LDR
-const int LIGHT_PIN = 15;     // D8/GPIO15 for PWM output
-const int LED_PIN = LED_BUILTIN;
 
 // WiFi credentials
 const char* ssid = "ALICE";
 const char* password = "@channel";
 
-// OTA Update Configuration
-#define OTA_SERVER "192.168.137.1"
-#define OTA_PORT 5000
+// Pin definitions
+const int LDR_PIN = A0;       // Analog input for LDR
+const int LIGHT_PIN = 15;     // D8/GPIO15 for PWM output
+const int LED_PIN = LED_BUILTIN;
 
 // Light control parameters
 #define TARGET_LUX 500.0    // Target light level in lux
@@ -53,9 +42,32 @@ const long udpBroadcastInterval = 500;  // Broadcast every 5 seconds
 unsigned long lastLightAdjust = 0;
 const long lightAdjustInterval = 100;  // Adjust light every 100ms
 
+void setup() {
+    Serial.begin(115200);
+    delay(100);
+    
+    // Setup pins
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(LIGHT_PIN, OUTPUT);
+    analogWriteRange(1023);  // Set PWM range to 10 bits
+    digitalWrite(LED_PIN, HIGH);   // LED off initially (ESP8266 LED is active LOW)
+    analogWrite(LIGHT_PIN, 0);     // Light off initially
+    
+    ldrSensor.begin();
+    ldrSensor.loadCalibration();
+    
+    // Initialize UDP and OTA handlers
+    udpHandler.begin();
+    otaHandler.begin();
+    otaHandler.checkForUpdates();
+    
+    Serial.println("Device ready for OTA updates and UDP communication.");
+    Serial.println("Current version: " + String(CURRENT_VERSION));
+    Serial.println("Device ID: " + String(DEVICE_ID));
+}
+
 void handleCalibrationCommand(String message) {
     // Format: CAL:degree:coeff0:coeff1:coeff2
-    int parts[4];
     float coeffs[3] = {0};
     int lastPos = 4;
     int nextPos;
@@ -84,23 +96,6 @@ void handleUDPMessage(String message) {
         lightState = false;
         analogWrite(LIGHT_PIN, 0);
         currentPWM = 0;
-    } else if (message.startsWith("CALIBRATE:")) {
-        int params[4];
-        int idx = 0;
-        int lastPos = 10;
-        for (int i = 0; i < 4; ++i) {
-            int nextPos = message.indexOf(':', lastPos);
-            if (nextPos == -1 && i < 3) return; // Invalid
-            String val = (i < 3) ? message.substring(lastPos, nextPos) : message.substring(lastPos);
-            params[i] = val.toInt();
-            lastPos = nextPos + 1;
-        }
-        ldrSensor.setCalibration(params[0], params[1], params[2], params[3]);
-        Serial.print("Calibration updated: ");
-        Serial.print(params[0]); Serial.print(", ");
-        Serial.print(params[1]); Serial.print(", ");
-        Serial.print(params[2]); Serial.print(", ");
-        Serial.println(params[3]);
     } else if (message.startsWith("CAL:")) {
         handleCalibrationCommand(message);
     }
@@ -127,30 +122,6 @@ void adjustLight() {
 
     Serial.print(" PWM: ");
     Serial.println(currentPWM);
-}
-
-void setup() {
-    Serial.begin(115200);
-    delay(100);
-    
-    // Setup pins
-    pinMode(LED_PIN, OUTPUT);
-    pinMode(LIGHT_PIN, OUTPUT);
-    analogWriteRange(1023);  // Set PWM range to 10 bits
-    digitalWrite(LED_PIN, HIGH);   // LED off initially (ESP8266 LED is active LOW)
-    analogWrite(LIGHT_PIN, 0);     // Light off initially
-    
-    ldrSensor.begin();
-    ldrSensor.loadCalibration();
-    
-    // Initialize UDP and OTA handlers
-    udpHandler.begin();
-    otaHandler.begin();
-    otaHandler.checkForUpdates();
-    
-    Serial.println("Device ready for OTA updates and UDP communication.");
-    Serial.println("Current version: " + String(CURRENT_VERSION));
-    Serial.println("Device ID: " + String(DEVICE_ID));
 }
 
 void loop() {
