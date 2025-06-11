@@ -59,3 +59,18 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+opc/check_api_capabilities.py
+opc/create_channel_final.py
+opc/create_channel_simple.py
+opc/KEPServer_Configuration_Guide.md
+opc/kepserver_project_manager.py
+opc/kepserver_template_generator.py
+server_commands.log
+server.log
+server.log
+Web/OTA/firmware_light_207.bin
+Web/OTA/firmware_light_208.bin
+Web/OTA/firmware_lock_207.bin
+Web/OTA/firmware_lock_208.bin
+server.log
+Web/OTA/data/devices.json
