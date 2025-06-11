@@ -3,6 +3,7 @@ import socket
 from ..config.settings import UDP_PORT, BUFFER_SIZE, DEVICE_TYPE_LIGHT, CMD_UNLOCK, CMD_LOCK
 from ..handlers.device_manager import DeviceManager
 from ..utils.sql import is_access_allowed, is_user_id_valid
+from .command_logger import log_command
 
 class UDPHandler:
     def __init__(self, port=UDP_PORT, buffer_size=BUFFER_SIZE):
@@ -51,6 +52,7 @@ class UDPHandler:
                     response = CMD_LOCK
                     device.update_state("LOCKED")
             self.sock.sendto(response.encode(), addr)
+            log_command(device.device_id, response, addr)
         else:
             pass
 
@@ -75,6 +77,7 @@ class UDPHandler:
         device = self.device_manager.get_device(device_id)
         if device and device.device_type == DEVICE_TYPE_LIGHT:
             self.sock.sendto(command.encode(), device.addr)
+            log_command(device_id, command, device.addr)
             print(f"[LIGHT] Sent {command} to {device_id}")
             return True
         return False
