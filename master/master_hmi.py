@@ -28,7 +28,7 @@ class MasterHMI(tk.Tk):
         super().__init__()
         self.title('Master HMI')
         self.geometry('800x600')
-        self.lux_logic = LuxTrendLogic(max_lux_points=40)
+        self.lux_logic = LuxTrendLogic(max_lux_points=75)
         self._stop_event = threading.Event()
         # Networking handler
         self.network = MasterNetworkHandler(

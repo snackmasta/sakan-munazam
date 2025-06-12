@@ -1,5 +1,5 @@
 class LuxTrendLogic:
-    def __init__(self, max_lux_points=40):
+    def __init__(self, max_lux_points=75):
         self.lux_data = []
         self.max_lux_points = max_lux_points
 
@@ -33,8 +33,8 @@ class LuxTrendLogic:
     def draw_lux_trend(self, ax, canvas):
         ax.clear()
         if not self.lux_data:
-            ax.set_ylim(0, 12)
-            ax.set_yticks([i for i in range(0, 13)])
+            ax.set_ylim(0, 75)
+            ax.set_yticks([i for i in range(0, 76, 5)])
             ax.set_ylabel('Lux')
             ax.set_xlabel('Sample')
             ax.grid(True, linestyle='--', alpha=0.5)
@@ -48,8 +48,8 @@ class LuxTrendLogic:
         if data_208:
             x_208, y_208 = zip(*data_208)
             ax.plot(x_208, y_208, color='blue', label='light_208')
-        ax.set_ylim(0, 12)
-        ax.set_yticks([i for i in range(0, 13)])
+        ax.set_ylim(0, 75)
+        ax.set_yticks([i for i in range(0, 76, 5)])
         ax.set_ylabel('Lux')
         ax.set_xlabel('Sample')
         ax.legend(loc='upper right', fontsize=8)
