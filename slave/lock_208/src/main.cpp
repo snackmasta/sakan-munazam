@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.12"
+#define CURRENT_VERSION "1.0.13"
 #define DEVICE_ID "lock_208"
 
 const char* ssid = "ALICE";
@@ -83,8 +83,14 @@ void handleUDPMessage(String message) {
     Serial.println(message);
     if (message == "UNLOCK") {
         lockController.unlock();
+        // Send status to master
+        String statusMsg = String(DEVICE_ID) + ":UNLOCKED";
+        udpHandler.sendTo(statusMsg.c_str(), masterIp, MASTER_UDP_PORT);
     } else if (message == "LOCK") {
         lockController.lock();
+        // Send status to master
+        String statusMsg = String(DEVICE_ID) + ":LOCKED";
+        udpHandler.sendTo(statusMsg.c_str(), masterIp, MASTER_UDP_PORT);
     } else {
         Serial.println("Unknown command received.");
     }
