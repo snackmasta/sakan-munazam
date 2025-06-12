@@ -178,8 +178,8 @@ class MasterHMI(tk.Tk):
                     # If a lock is unlocked, turn on the corresponding light if reserved
                     if dev in self.lock_to_light and msg.startswith(dev + ':UNLOCKED'):
                         light_dev = self.lock_to_light[dev]
-                        # Check if the room is reserved now
-                        if self.is_room_reserved_for_device(dev):
+                        reserved, _ = self.is_room_reserved_for_device(dev)
+                        if reserved:
                             self.send_command(light_dev, 'ON')
                             self.reserved_lights_on[light_dev] = True
                 elif msg.startswith(dev + ':OFF') or msg.startswith(dev + ':LOCKED'):
@@ -283,26 +283,22 @@ class MasterHMI(tk.Tk):
                 canvas.create_oval(2, 2, 18, 18, fill='gray', outline='black')
 
     def is_room_reserved_for_device(self, lock_device):
-        """Check if the room for the given lock device is currently reserved."""
+        """Check if the room for the given lock device is currently reserved, and return reservation end time if exists."""
         try:
-            # Get IP address for the lock device
             ip_address = DEVICES[lock_device]['ip']
-            # Use a dummy user_id since is_access_allowed checks current time for any reservation
-            # (user_id is not used for this check, but we can pass any string)
-            # Instead, let's check if any reservation exists for this room at the current time
             from utils import sql
             connection = sql.get_connection()
             cursor = connection.cursor(buffered=True)
             cursor.execute("SELECT room_id FROM slave WHERE ip_address = %s", (ip_address,))
             row = cursor.fetchone()
             if not row:
-                return False
+                return False, None
             room_id = row[0]
             now = sql.datetime.now()
             today = now.strftime('%Y-%m-%d')
             current_time = now.strftime('%H:%M:%S')
             query = (
-                "SELECT 1 FROM room_reservations "
+                "SELECT end_time FROM room_reservations "
                 "WHERE room_id = %s "
                 "AND date = %s AND start_time <= %s AND end_time >= %s"
             )
@@ -310,25 +306,51 @@ class MasterHMI(tk.Tk):
             result = cursor.fetchone()
             cursor.close()
             connection.close()
-            return result is not None
+            if result:
+                return True, result[0]  # end_time as string
+            else:
+                return False, None
         except Exception as e:
             print(f"Reservation check error: {e}")
-            return False
+            return False, None
 
     def check_reservation_expiry(self):
-        """Periodically check if any reserved light should be turned off."""
+        """Periodically check if any reserved light should be turned off, with 3s grace after end_time."""
         try:
             from utils import sql
             for lock_dev, light_dev in self.lock_to_light.items():
                 if self.reserved_lights_on.get(light_dev):
-                    # If the reservation has ended, turn off the light
-                    if not self.is_room_reserved_for_device(lock_dev):
+                    reserved, end_time = self.is_room_reserved_for_device(lock_dev)
+                    if not reserved:
+                        # Check if reservation ended less than 3 seconds ago
+                        ip_address = DEVICES[lock_dev]['ip']
+                        connection = sql.get_connection()
+                        cursor = connection.cursor(buffered=True)
+                        cursor.execute("SELECT room_id FROM slave WHERE ip_address = %s", (ip_address,))
+                        row = cursor.fetchone()
+                        if row:
+                            room_id = row[0]
+                            now = sql.datetime.now()
+                            today = now.strftime('%Y-%m-%d')
+                            # Get the latest end_time for today before now
+                            cursor.execute(
+                                "SELECT end_time FROM room_reservations WHERE room_id = %s AND date = %s AND end_time < %s ORDER BY end_time DESC LIMIT 1",
+                                (room_id, today, now.strftime('%H:%M:%S'))
+                            )
+                            last_end = cursor.fetchone()
+                            cursor.close()
+                            connection.close()
+                            if last_end:
+                                from datetime import datetime, timedelta
+                                end_dt = datetime.strptime(f"{today} {last_end[0]}", "%Y-%m-%d %H:%M:%S")
+                                if (now - end_dt).total_seconds() < 3:
+                                    continue  # Still within 3s grace, do not turn off
+                        # Otherwise, turn off
                         self.send_command(light_dev, 'OFF')
                         self.reserved_lights_on[light_dev] = False
         except Exception as e:
             print(f"Reservation expiry check error: {e}")
-        # Schedule next check
-        self.after(60000, self.check_reservation_expiry)
+        self.after(1000, self.check_reservation_expiry)  # check every second for accuracy
 
 if __name__ == '__main__':
     app = MasterHMI()
