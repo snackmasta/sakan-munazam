@@ -15,6 +15,7 @@ def create_alarm_placeholder(parent, color='gray', diameter=20):
     canvas._blinking = False
     canvas._blink_job = None
     canvas._acknowledged = False
+    canvas._json_alarm_state = 0 if color == 'gray' else 1
 
     def start_blinking():
         if canvas._blinking:
@@ -24,10 +25,16 @@ def create_alarm_placeholder(parent, color='gray', diameter=20):
         def blink():
             if not canvas._blinking or canvas._acknowledged:
                 canvas.itemconfig(oval, fill='gray')
+                canvas._json_alarm_state = 0
+                if hasattr(canvas.master, 'event_generate'):
+                    canvas.master.event_generate('<<AlarmBlink>>', when='tail')
                 return
             current_color = canvas.itemcget(oval, 'fill')
             new_color = 'red' if current_color == 'gray' else 'gray'
             canvas.itemconfig(oval, fill=new_color)
+            canvas._json_alarm_state = 1 if new_color == 'red' else 0
+            if hasattr(canvas.master, 'event_generate'):
+                canvas.master.event_generate('<<AlarmBlink>>', when='tail')
             canvas._blink_job = canvas.after(400, blink)
         blink()
 
@@ -38,6 +45,9 @@ def create_alarm_placeholder(parent, color='gray', diameter=20):
             canvas.after_cancel(canvas._blink_job)
             canvas._blink_job = None
         canvas.itemconfig(oval, fill='gray')
+        canvas._json_alarm_state = 0
+        if hasattr(canvas.master, 'event_generate'):
+            canvas.master.event_generate('<<AlarmBlink>>', when='tail')
 
     canvas.start_blinking = start_blinking
     canvas.stop_blinking = stop_blinking

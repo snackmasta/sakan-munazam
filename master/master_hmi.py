@@ -6,6 +6,7 @@ import time
 import threading
 import socket
 import json
+from opcua import Client, ua
 matplotlib.use('Agg')  # Use non-interactive backend for safety
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -171,6 +172,85 @@ class MasterHMI(tk.Tk):
                 self.after(60000, periodic_update)
             self.after(60000, periodic_update)
 
+        self.bind('<<AlarmBlink>>', lambda e: self.write_hmi_state_json())
+
+        # OPC UA client
+        self.opc_client = None
+        self.opc_connected = False
+        self._opc_state_lock = threading.Lock()
+        self._opc_state_snapshot = {}
+        self._opc_thread = threading.Thread(target=self._opc_relay_thread, daemon=True)
+        self._opc_thread.start()
+        self._init_opcua_client()
+        self._update_opc_state_snapshot()  # Initialize snapshot
+        # self._start_opcua_relay_thread()  # Removed: no such method, thread already started
+
+    def _init_opcua_client(self):
+        try:
+            self.opc_client = Client("opc.tcp://192.168.100.115:49320")
+            self.opc_client.connect()
+            self.opc_connected = True
+            print("[HMI] Connected to OPC UA server.")
+        except Exception as e:
+            print(f"[HMI] OPC UA connection error: {e}")
+            self.opc_connected = False
+
+    def _update_opc_state_snapshot(self):
+        """Update the thread-safe snapshot of HMI state for OPC relay."""
+        state = {}
+        for dev in self.led_vars:
+            state[f'led_{dev}'] = 1 if self.led_vars[dev].get() in ('ON', 'UNLOCKED') else 0
+        for dev, canvas in self.alarm_canvases.items():
+            state[f'alarm_{dev}'] = getattr(canvas, '_json_alarm_state', 0)
+        for room in self.maintenance_indicators:
+            state[f'maintenance_{room}'] = 1 if self.maintenance_indicators[room].cget('bg') == 'orange' else 0
+        with self._opc_state_lock:
+            self._opc_state_snapshot = state.copy()
+
+    def _opc_relay_thread(self):
+        while True:
+            with self._opc_state_lock:
+                state = self._opc_state_snapshot.copy()
+            for key, value in state.items():
+                self._opc_write(key, value)
+            time.sleep(0.01)  # 10ms, adjust as needed
+
+    def _opc_write(self, key, value):
+        TAG_MAP = {
+            'led_lock_207': "ns=2;s=ROOM 207.Device1.led_lock_207",
+            'led_lock_208': "ns=2;s=ROOM 207.Device1.led_lock_208",
+            'led_light_207': "ns=2;s=ROOM 207.Device1.led_light_207",
+            'led_light_208': "ns=2;s=ROOM 207.Device1.led_light_208",
+            'alarm_lock_207': "ns=2;s=ROOM 207.Device1.alarm_lock_207",
+            'alarm_lock_208': "ns=2;s=ROOM 207.Device1.alarm_lock_208",
+            'alarm_light_207': "ns=2;s=ROOM 207.Device1.alarm_light_207",
+            'alarm_light_208': "ns=2;s=ROOM 207.Device1.alarm_light_208",
+            'maintenance_207': "ns=2;s=ROOM 207.Device1.maintenance_207",
+            'maintenance_208': "ns=2;s=ROOM 207.Device1.maintenance_208",
+        }
+        if not self.opc_connected or key not in TAG_MAP:
+            return
+        try:
+            node = self.opc_client.get_node(TAG_MAP[key])
+            varianttype = node.get_data_type_as_variant_type()
+            if varianttype == ua.VariantType.Boolean:
+                v = value
+            elif varianttype == ua.VariantType.Byte:
+                v = int(value) & 0xFF
+            elif varianttype == ua.VariantType.Int16:
+                v = int(value)
+            elif varianttype == ua.VariantType.UInt16:
+                v = int(value)
+            elif varianttype == ua.VariantType.Int32:
+                v = int(value)
+            elif varianttype == ua.VariantType.UInt32:
+                v = int(value)
+            else:
+                v = int(value)
+            node.set_value(ua.DataValue(ua.Variant(v, varianttype)))
+        except Exception as e:
+            print(f"[HMI] Failed to write {key} to OPC: {e}")
+
     def send_command(self, device_name, command):
         try:
             self.network.send_command(device_name, command)
@@ -274,6 +354,7 @@ class MasterHMI(tk.Tk):
                 elif msg.startswith(dev + ':OFF') or msg.startswith(dev + ':LOCKED'):
                     self.led_vars[dev].set('OFF' if 'light' in dev else 'LOCKED')
                     indicator.config(bg='gray')
+            self._update_opc_state_snapshot()
         except Exception as e:
             print(f"LED status update error: {e}")
 
@@ -307,6 +388,9 @@ class MasterHMI(tk.Tk):
         self.tail_server_log(log_path="server.log", n=50)
 
     def destroy(self):
+        self._opcua_thread_stop.set()
+        if self._opcua_thread:
+            self._opcua_thread.join(timeout=1)
         self._stop_event.set()
         self.heartbeat_listener.stop()
         super().destroy()
@@ -378,6 +462,7 @@ class MasterHMI(tk.Tk):
                     canvas._blink_job = None
                 # Set to solid red until heartbeat returns and reset is pressed
                 canvas.itemconfig('all', fill='red')
+            self._update_opc_state_snapshot()  # Update state after ACK
         except Exception as e:
             messagebox.showerror('Error', f"Failed to acknowledge alarm: {e}")
 
@@ -385,23 +470,21 @@ class MasterHMI(tk.Tk):
         """Callback function for heartbeat alarms."""
         if device_name in self.alarm_canvases:
             canvas = self.alarm_canvases[device_name]
-            if alarm_on:
-                # Heartbeat lost
-                if not getattr(canvas, '_acknowledged', False):
-                    # Only start blinking if not already blinking
-                    if not getattr(canvas, '_blinking', False):
-                        canvas.start_blinking()
+            def update_alarm_canvas():
+                if alarm_on:
+                    # Heartbeat lost
+                    if not getattr(canvas, '_acknowledged', False):
+                        # Only start blinking if not already blinking
+                        if not getattr(canvas, '_blinking', False):
+                            canvas.start_blinking()
                 else:
-                    # ACKed, heartbeat still lost: solid red
+                    # Heartbeat is back: always clear alarm
+                    canvas._acknowledged = False
                     if getattr(canvas, '_blinking', False):
                         canvas.stop_blinking()
-                    canvas.itemconfig('all', fill='red')
-            else:
-                # Heartbeat is back: always clear alarm
-                canvas._acknowledged = False
-                if getattr(canvas, '_blinking', False):
-                    canvas.stop_blinking()
-                canvas.itemconfig('all', fill='gray')
+                    canvas.itemconfig('all', fill='gray')
+                self._update_opc_state_snapshot()  # Update state after alarm change
+            self.after(0, update_alarm_canvas)
 
     def reset_maintenance(self, room):
         self.set_maintenance(room, on=False)
@@ -414,30 +497,40 @@ class MasterHMI(tk.Tk):
                     canvas._acknowledged = False
                     canvas.stop_blinking()
                     canvas.itemconfig('all', fill='gray')
+        self._update_opc_state_snapshot()  # Update state after reset
         self.log(f"Maintenance reset for Room {room}")
 
     def set_maintenance(self, room, on=True):
         if room in self.maintenance_indicators:
             indicator = self.maintenance_indicators[room]
             indicator.config(bg='orange' if on else 'gray')
+            self._update_opc_state_snapshot()  # Update state after maintenance change
 
     def get_hmi_state_json(self):
-        """Collect all HMI component states and return as JSON string."""
-        state = {
-            'leds': {dev: self.led_vars[dev].get() for dev in self.led_vars},
-            'alarms': {
-                dev: {
-                    'blinking': getattr(canvas, '_blinking', False),
-                    'acknowledged': getattr(canvas, '_acknowledged', False),
-                    'color': canvas.itemcget('all', 'fill')
-                } for dev, canvas in self.alarm_canvases.items()
-            },
-            'maintenance': {
-                room: self.maintenance_indicators[room].cget('bg') == 'orange' for room in self.maintenance_indicators
-            },
-            'reservations': self.reservation_manager.get_reservation_state() if hasattr(self.reservation_manager, 'get_reservation_state') else {},
-            'reserved_lights_on': self.reservation_manager.reserved_lights_on if hasattr(self.reservation_manager, 'reserved_lights_on') else {},
-        }
+        """Collect all HMI component states and return as flat JSON string with only numerical values (one value per UI element). Alarms: 1=red, 0=gray. Blinking is just rapid value change."""
+        state = {}
+        # LEDs: led_<dev> = 1 (ON/UNLOCKED), 0 (OFF/LOCKED)
+        for dev in self.led_vars:
+            val = self.led_vars[dev].get()
+            if val in ('ON', 'UNLOCKED'):
+                state[f'led_{dev}'] = 1
+            else:
+                state[f'led_{dev}'] = 0
+        # Alarms: alarm_<dev> = 1 (red), 0 (gray). Use the current visible state for blinking.
+        for dev, canvas in self.alarm_canvases.items():
+            state[f'alarm_{dev}'] = getattr(canvas, '_json_alarm_state', 0)
+        # Maintenance: maintenance_<room> = 1 (on/orange), 0 (off/gray)
+        for room in self.maintenance_indicators:
+            state[f'maintenance_{room}'] = 1 if self.maintenance_indicators[room].cget('bg') == 'orange' else 0
+        # Reserved lights: reserved_light_<dev> = 1 (on), 0 (off)
+        if hasattr(self.reservation_manager, 'reserved_lights_on'):
+            for dev, val in self.reservation_manager.reserved_lights_on.items():
+                state[f'reserved_light_{dev}'] = 1 if val else 0
+        # Reservation state (flattened): reservation_<lock> = 1 (reserved), 0 (not reserved)
+        if hasattr(self.reservation_manager, 'get_reservation_state'):
+            reservations = self.reservation_manager.get_reservation_state()
+            for lock, info in reservations.items():
+                state[f'reservation_{lock}'] = 1 if info.get('reserved', False) else 0
         return json.dumps(state, indent=2)
 
     def write_hmi_state_json(self, path='hmi_state.json'):
@@ -453,6 +546,9 @@ class MasterHMI(tk.Tk):
         self.after(500, self.periodic_hmi_state_update)
 
     def destroy(self):
+        self._opcua_thread_stop.set()
+        if self._opcua_thread:
+            self._opcua_thread.join(timeout=1)
         self._stop_event.set()
         self.heartbeat_listener.stop()
         super().destroy()
@@ -460,5 +556,4 @@ class MasterHMI(tk.Tk):
 if __name__ == '__main__':
     app = MasterHMI()
     app.after(100, app.show_server_log)  # Show last 50 incoming log lines from server.log on startup
-    app.after(200, app.periodic_hmi_state_update)  # Start periodic HMI state JSON update
     app.mainloop()
