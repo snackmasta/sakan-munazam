@@ -107,6 +107,7 @@ class MasterHMI(tk.Tk):
         self.led_labels = {}
         self.led_indicators = {}
         self.alarm_canvases = {}
+        self.ack_buttons = {}  # Store references to ACK buttons
 
         led_frame = tk.Frame(self)
         led_frame.pack(pady=5)
@@ -124,6 +125,25 @@ class MasterHMI(tk.Tk):
             alarm_canvas = create_alarm_placeholder(led_frame)
             alarm_canvas.pack(side='left', padx=5)
             self.alarm_canvases[dev] = alarm_canvas
+            # Add ACK button for each alarm
+            ack_btn = tk.Button(led_frame, text=f"ACK {dev}", command=lambda d=dev: self.ack_alarm(d))
+            ack_btn.pack(side='left', padx=2)
+            self.ack_buttons[dev] = ack_btn
+
+        # Add maintenance indicators and reset buttons for each room
+        self.maintenance_indicators = {}
+        self.maintenance_reset_buttons = {}
+        for room in ["207", "208"]:
+            maint_frame = tk.Frame(self)
+            maint_frame.pack(pady=2)
+            maint_label = tk.Label(maint_frame, text=f"Room {room} Maintenance", width=18)
+            maint_label.pack(side='left', padx=5)
+            indicator = tk.Label(maint_frame, text="MAINT", width=6, relief='sunken', bg='gray', fg='white')
+            indicator.pack(side='left', padx=5)
+            self.maintenance_indicators[room] = indicator
+            reset_btn = tk.Button(maint_frame, text=f"Reset {room}", command=lambda r=room: self.reset_maintenance(r))
+            reset_btn.pack(side='left', padx=5)
+            self.maintenance_reset_buttons[room] = reset_btn
 
         self.after(100, self.process_incoming_queue)
 
@@ -335,22 +355,77 @@ class MasterHMI(tk.Tk):
         except Exception as e:
             messagebox.showerror('Error', f"Failed to set max lux limit: {e}")
 
+    def ack_alarm(self, device_name):
+        """Acknowledge the alarm for a device. Turn on maintenance indicator for the room, no green ACK button."""
+        try:
+            # Send an ACK command to the device
+            self.send_command(device_name, 'ACK')
+            # Turn on maintenance indicator for the room
+            for room in self.maintenance_indicators:
+                if room in device_name:
+                    self.set_maintenance(room, on=True)
+            # No green ACK button, just keep the button as default
+            if device_name in self.ack_buttons:
+                ack_btn = self.ack_buttons[device_name]
+                ack_btn.config(bg=self.cget('bg'), text=f'ACK {device_name}')
+            if device_name in self.alarm_canvases:
+                canvas = self.alarm_canvases[device_name]
+                canvas._blinking = False  # Stop blinking
+                canvas._acknowledged = True
+                if canvas._blink_job:
+                    canvas.after_cancel(canvas._blink_job)
+                    canvas._blink_job = None
+                # Set to solid red until heartbeat returns and reset is pressed
+                canvas.itemconfig('all', fill='red')
+        except Exception as e:
+            messagebox.showerror('Error', f"Failed to acknowledge alarm: {e}")
+
     def heartbeat_alarm_callback(self, device_name, alarm_on):
         """Callback function for heartbeat alarms."""
-        if alarm_on:
-            # Turn on the alarm placeholder (red)
-            if device_name in self.alarm_canvases:
-                canvas = self.alarm_canvases[device_name]
-                canvas.delete("all")
-                canvas.create_oval(2, 2, 18, 18, fill='red', outline='black')
-        else:
-            # Turn off the alarm placeholder (gray)
-            if device_name in self.alarm_canvases:
-                canvas = self.alarm_canvases[device_name]
-                canvas.delete("all")
-                canvas.create_oval(2, 2, 18, 18, fill='gray', outline='black')
+        if device_name in self.alarm_canvases:
+            canvas = self.alarm_canvases[device_name]
+            if alarm_on:
+                # Heartbeat lost
+                if not getattr(canvas, '_acknowledged', False):
+                    # Only start blinking if not already blinking
+                    if not getattr(canvas, '_blinking', False):
+                        canvas.start_blinking()
+                else:
+                    # ACKed, heartbeat still lost: solid red
+                    if getattr(canvas, '_blinking', False):
+                        canvas.stop_blinking()
+                    canvas.itemconfig('all', fill='red')
+            else:
+                # Heartbeat is back: always clear alarm
+                canvas._acknowledged = False
+                if getattr(canvas, '_blinking', False):
+                    canvas.stop_blinking()
+                canvas.itemconfig('all', fill='gray')
+
+    def reset_maintenance(self, room):
+        self.set_maintenance(room, on=False)
+        # Also clear alarm if heartbeat is back and ACK was pressed
+        for dev in DEVICES:
+            if room in dev and dev in self.alarm_canvases:
+                canvas = self.alarm_canvases[dev]
+                # Only clear if heartbeat is back and ACK was pressed
+                if getattr(canvas, '_acknowledged', False):
+                    canvas._acknowledged = False
+                    canvas.stop_blinking()
+                    canvas.itemconfig('all', fill='gray')
+        self.log(f"Maintenance reset for Room {room}")
+
+    def set_maintenance(self, room, on=True):
+        if room in self.maintenance_indicators:
+            indicator = self.maintenance_indicators[room]
+            indicator.config(bg='orange' if on else 'gray')
+
+    def destroy(self):
+        self._stop_event.set()
+        self.heartbeat_listener.stop()
+        super().destroy()
 
 if __name__ == '__main__':
     app = MasterHMI()
-    app.show_server_log()  # Show last 50 incoming log lines from server.log on startup
+    app.after(100, app.show_server_log)  # Show last 50 incoming log lines from server.log on startup
     app.mainloop()
