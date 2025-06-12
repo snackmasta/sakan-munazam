@@ -38,6 +38,7 @@
       <select id="degree">
         <option value="1">Linear</option>
         <option value="2">Quadratic</option>
+        <option value="3">Cubic</option>
       </select>
       <button class="btn" onclick="fitCurve()">Fit Curve</button>
     </div>
@@ -172,7 +173,7 @@
         document.getElementById('sendResult').textContent = 'Enter device IP!';
         return;
       }
-      // Format: CAL:degree:coeff0:coeff1:coeff2
+      // Format: CAL:degree:coeff0:coeff1:coeff2:coeff3
       let msg = `CAL:${degree}:${coeffs.map(c=>c.toFixed(6)).join(':')}`;
       try {
         // Send via UDP relay API (assume /api/udp?ip=...&msg=...)
