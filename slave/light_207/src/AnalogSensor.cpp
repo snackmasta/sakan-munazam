@@ -39,7 +39,7 @@ void AnalogSensor::setCalibration(int newInMin, int newInMax, int newOutMin, int
 void AnalogSensor::loadCalibration() {
   EEPROM.begin(64);
   EEPROM.get(EEPROM_CALIB_ADDR, calibration);
-  if (calibration.degree < 1 || calibration.degree > 2) calibration.valid = false;
+  if (calibration.degree < 1 || calibration.degree > 3) calibration.valid = false;
 }
 
 void AnalogSensor::saveCalibration() {
@@ -54,7 +54,7 @@ uint8_t AnalogSensor::getCalibrationDegree() const {
 }
 
 float AnalogSensor::getCalibrationCoeff(uint8_t i) const {
-  if (i < 3) return calibration.coeffs[i];
+  if (i < 4) return calibration.coeffs[i];
   return 0.0f;
 }
 
@@ -64,7 +64,7 @@ uint8_t AnalogSensor::getCalibrationCoeffCount() const {
 
 void AnalogSensor::setCalibrationCoeffs(float* coeffs, uint8_t degree) {
   calibration.degree = degree;
-  for (int i = 0; i < 3; ++i) calibration.coeffs[i] = (i < degree+1) ? coeffs[i] : 0.0f;
+  for (int i = 0; i < 4; ++i) calibration.coeffs[i] = (i < degree+1) ? coeffs[i] : 0.0f;
   calibration.valid = true;
   saveCalibration();
 }
