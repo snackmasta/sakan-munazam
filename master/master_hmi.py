@@ -143,6 +143,13 @@ class MasterHMI(tk.Tk):
         # Start periodic reservation check
         self.after(1000, self.periodic_reservation_check)
 
+        # After building layout, set up periodic update for reservation listbox if present
+        if 'reservation_listbox' in self.widgets and hasattr(self, 'update_reservation_listbox'):
+            def periodic_update():
+                self.update_reservation_listbox()
+                self.after(60000, periodic_update)
+            self.after(60000, periodic_update)
+
     def send_command(self, device_name, command):
         try:
             self.network.send_command(device_name, command)

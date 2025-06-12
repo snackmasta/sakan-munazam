@@ -148,4 +148,28 @@ class HMIWidgets:
         self.widgets['user_id_entry'] = user_id_entry
         self.widgets['ip_entry'] = ip_entry
 
+        # Add closest 3 reservations section
+        reservation_frame = tk.LabelFrame(self.master, text="Next 3 Reservations", font=("Arial", 10, "bold"), padx=8, pady=8)
+        reservation_frame.pack(fill='x', padx=8, pady=(0,8), side='bottom')
+        reservation_listbox = tk.Listbox(reservation_frame, width=100, height=4, font=("Consolas", 10))
+        reservation_listbox.pack(fill='x', padx=4, pady=4)
+        self.widgets['reservation_listbox'] = reservation_listbox
+        self.update_reservation_listbox = lambda: self._update_reservation_listbox(reservation_listbox)
+        self.update_reservation_listbox()
+        # Periodically update
+        self.master.after(60000, self.update_reservation_listbox)
+
+        return self.widgets
+
+    def _update_reservation_listbox(self, listbox):
+        from utils import sql
+        listbox.delete(0, 'end')
+        reservations = sql.get_next_3_reservations()
+        if not reservations:
+            listbox.insert('end', 'No upcoming reservations.')
+        else:
+            for r in reservations:
+                s = f"Room {r['room_id']} | User {r['user_id']} | {r['date']} {r['start_time']} - {r['end_time']}"
+                listbox.insert('end', s)
+
         return self.widgets

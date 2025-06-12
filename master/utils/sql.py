@@ -75,10 +75,50 @@ def is_access_allowed(user_id, ip_address):
         cursor.close()
         connection.close()
 
+def get_all_room_reservations():
+    """Retrieve all room reservations."""
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+        query = "SELECT * FROM room_reservations"
+        cursor.execute(query)
+        reservations = cursor.fetchall()
+        return reservations
+    finally:
+        cursor.close()
+        connection.close()
+
+def get_next_3_reservations():
+    """Retrieve the next 3 upcoming room reservations ordered by date and start_time."""
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+        now = datetime.now()
+        today = now.strftime('%Y-%m-%d')
+        current_time = now.strftime('%H:%M:%S')
+        query = (
+            "SELECT * FROM room_reservations "
+            "WHERE (date > %s) OR (date = %s AND start_time >= %s) "
+            "ORDER BY date ASC, start_time ASC "
+            "LIMIT 3"
+        )
+        cursor.execute(query, (today, today, current_time))
+        reservations = cursor.fetchall()
+        return reservations
+    finally:
+        cursor.close()
+        connection.close()
+
 if __name__ == "__main__":
     print("All valid user IDs in the database:")
     for uid in get_all_user_ids():
         print(uid)
+    print("\nAll room reservations:")
+    for reservation in get_all_room_reservations():
+        print(reservation)
+    print("\nNext 3 upcoming room reservations:")
+    for reservation in get_next_3_reservations():
+        print(reservation)
     test_user_id = input("Enter user_id to test: ").strip()
     if is_user_id_valid(test_user_id):
         print("User ID is valid (found in database).")
