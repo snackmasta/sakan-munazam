@@ -36,14 +36,34 @@ class SliderOPCClient(QWidget):
         try:
             self.client.connect()
             node = self.client.get_node(TAG_NODEID)
+            self.node = node
             # Read initial value
             val = node.get_value()
             self.slider.setValue(int(val))
             self.label.setText(f"Slider Value: {val}")
-            self.node = node
+            # Start a thread to poll for value changes
+            self.polling = True
+            threading.Thread(target=self.poll_tag_value, daemon=True).start()
         except Exception as e:
             self.label.setText(f"OPC Error: {e}")
             self.node = None
+
+    def poll_tag_value(self):
+        import time
+        last_val = None
+        while getattr(self, 'polling', False):
+            try:
+                if hasattr(self, 'node') and self.node is not None:
+                    val = self.node.get_value()
+                    if val != last_val:
+                        last_val = val
+                        self.slider.blockSignals(True)
+                        self.slider.setValue(int(val))
+                        self.slider.blockSignals(False)
+                        self.label.setText(f"Slider Value: {val}")
+            except Exception:
+                pass
+            time.sleep(0.2)  # Poll every 200ms
 
     def on_slider_change(self, value):
         self.label.setText(f"Slider Value: {value}")
@@ -68,6 +88,7 @@ class SliderOPCClient(QWidget):
 
     def closeEvent(self, event):
         try:
+            self.polling = False
             self.client.disconnect()
         except Exception:
             pass
