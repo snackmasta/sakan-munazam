@@ -130,6 +130,16 @@ class MasterHMI(tk.Tk):
         self.heartbeat_listener = HeartbeatListener(DEVICES.keys(), self.heartbeat_alarm_callback)
         self.heartbeat_listener.start()
 
+        # Map locks to their corresponding lights (update as needed)
+        self.lock_to_light = {
+            'lock_207': 'light_207',
+            'lock_208': 'light_208',
+        }
+        # Track which lights are ON due to reservation
+        self.reserved_lights_on = {}
+        # Start periodic reservation check
+        self.after(60000, self.check_reservation_expiry)  # every 60 seconds
+
     def send_command(self, device_name, command):
         try:
             self.network.send_command(device_name, command)
@@ -165,6 +175,13 @@ class MasterHMI(tk.Tk):
                 if msg.startswith(dev + ':ON') or msg.startswith(dev + ':UNLOCKED'):
                     self.led_vars[dev].set('ON' if 'light' in dev else 'UNLOCKED')
                     indicator.config(bg='green')
+                    # If a lock is unlocked, turn on the corresponding light if reserved
+                    if dev in self.lock_to_light and msg.startswith(dev + ':UNLOCKED'):
+                        light_dev = self.lock_to_light[dev]
+                        # Check if the room is reserved now
+                        if self.is_room_reserved_for_device(dev):
+                            self.send_command(light_dev, 'ON')
+                            self.reserved_lights_on[light_dev] = True
                 elif msg.startswith(dev + ':OFF') or msg.startswith(dev + ':LOCKED'):
                     self.led_vars[dev].set('OFF' if 'light' in dev else 'LOCKED')
                     indicator.config(bg='gray')
@@ -264,6 +281,54 @@ class MasterHMI(tk.Tk):
                 canvas = self.alarm_canvases[device_name]
                 canvas.delete("all")
                 canvas.create_oval(2, 2, 18, 18, fill='gray', outline='black')
+
+    def is_room_reserved_for_device(self, lock_device):
+        """Check if the room for the given lock device is currently reserved."""
+        try:
+            # Get IP address for the lock device
+            ip_address = DEVICES[lock_device]['ip']
+            # Use a dummy user_id since is_access_allowed checks current time for any reservation
+            # (user_id is not used for this check, but we can pass any string)
+            # Instead, let's check if any reservation exists for this room at the current time
+            from utils import sql
+            connection = sql.get_connection()
+            cursor = connection.cursor(buffered=True)
+            cursor.execute("SELECT room_id FROM slave WHERE ip_address = %s", (ip_address,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            room_id = row[0]
+            now = sql.datetime.now()
+            today = now.strftime('%Y-%m-%d')
+            current_time = now.strftime('%H:%M:%S')
+            query = (
+                "SELECT 1 FROM room_reservations "
+                "WHERE room_id = %s "
+                "AND date = %s AND start_time <= %s AND end_time >= %s"
+            )
+            cursor.execute(query, (room_id, today, current_time, current_time))
+            result = cursor.fetchone()
+            cursor.close()
+            connection.close()
+            return result is not None
+        except Exception as e:
+            print(f"Reservation check error: {e}")
+            return False
+
+    def check_reservation_expiry(self):
+        """Periodically check if any reserved light should be turned off."""
+        try:
+            from utils import sql
+            for lock_dev, light_dev in self.lock_to_light.items():
+                if self.reserved_lights_on.get(light_dev):
+                    # If the reservation has ended, turn off the light
+                    if not self.is_room_reserved_for_device(lock_dev):
+                        self.send_command(light_dev, 'OFF')
+                        self.reserved_lights_on[light_dev] = False
+        except Exception as e:
+            print(f"Reservation expiry check error: {e}")
+        # Schedule next check
+        self.after(60000, self.check_reservation_expiry)
 
 if __name__ == '__main__':
     app = MasterHMI()
