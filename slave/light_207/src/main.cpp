@@ -6,8 +6,8 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.4"
-#define DEVICE_ID "light_208"
+#define CURRENT_VERSION "1.0.24"
+#define DEVICE_ID "light_207"
 
 // WiFi credentials
 const char* ssid = "ALICE";
@@ -68,6 +68,7 @@ void setup() {
 
 void handleCalibrationCommand(String message) {
     // Format: CAL:degree:coeff0:coeff1:coeff2
+    int parts[4];
     float coeffs[3] = {0};
     int lastPos = 4;
     int nextPos;
@@ -96,6 +97,23 @@ void handleUDPMessage(String message) {
         lightState = false;
         analogWrite(LIGHT_PIN, 0);
         currentPWM = 0;
+    } else if (message.startsWith("CALIBRATE:")) {
+        int params[4];
+        int idx = 0;
+        int lastPos = 10;
+        for (int i = 0; i < 4; ++i) {
+            int nextPos = message.indexOf(':', lastPos);
+            if (nextPos == -1 && i < 3) return; // Invalid
+            String val = (i < 3) ? message.substring(lastPos, nextPos) : message.substring(lastPos);
+            params[i] = val.toInt();
+            lastPos = nextPos + 1;
+        }
+        ldrSensor.setCalibration(params[0], params[1], params[2], params[3]);
+        Serial.print("Calibration updated: ");
+        Serial.print(params[0]); Serial.print(", ");
+        Serial.print(params[1]); Serial.print(", ");
+        Serial.print(params[2]); Serial.print(", ");
+        Serial.println(params[3]);
     } else if (message.startsWith("CAL:")) {
         handleCalibrationCommand(message);
     }
