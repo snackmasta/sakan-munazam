@@ -46,7 +46,8 @@ class MasterHMI(tk.Tk):
             broadcast_cb=self.broadcast_mesh_command,
             check_user_access_cb=self.check_user_access,
             show_user_ids_cb=self.show_user_ids,
-            set_pwm_cb=self.set_pwm
+            set_pwm_cb=self.set_pwm,
+            set_max_lux_cb=self.set_max_lux_limit
         ).build_layout()
         # Assign widget references
         self.log_area = self.widgets['log_area']
@@ -136,6 +137,26 @@ class MasterHMI(tk.Tk):
             self.send_command(device_name, f'PWM:{pwm_value}')
         except Exception as e:
             messagebox.showerror('Error', f"Failed to set PWM: {e}")
+
+    def set_max_lux_limit(self, limit):
+        """Set the maximum lux limit for the trend chart"""
+        try:
+            if limit < 10 or limit > 1000:
+                messagebox.showwarning('Warning', 'Max lux limit should be between 10 and 1000')
+                return
+            self.lux_logic.set_max_lux_limit(limit)
+            # Update the GUI entry field if it exists
+            if 'max_lux_entry' in self.widgets:
+                max_lux_entry = self.widgets['max_lux_entry']
+                max_lux_entry.delete(0, 'end')
+                max_lux_entry.insert(0, str(limit))
+            # Redraw the chart with new limits
+            self.lux_logic.draw_lux_trend(self.lux_ax, self.lux_canvas)
+            self.log(f"Max lux limit set to {limit}")
+        except ValueError:
+            messagebox.showerror('Error', 'Invalid max lux limit value')
+        except Exception as e:
+            messagebox.showerror('Error', f"Failed to set max lux limit: {e}")
 
 if __name__ == '__main__':
     app = MasterHMI()

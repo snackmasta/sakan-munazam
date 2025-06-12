@@ -4,7 +4,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class HMIWidgets:
-    def __init__(self, master, devices, send_command_cb, broadcast_cb, check_user_access_cb, show_user_ids_cb, set_pwm_cb=None):
+    def __init__(self, master, devices, send_command_cb, broadcast_cb, check_user_access_cb, show_user_ids_cb, set_pwm_cb=None, set_max_lux_cb=None):
         self.master = master
         self.devices = devices
         self.send_command_cb = send_command_cb
@@ -12,6 +12,7 @@ class HMIWidgets:
         self.check_user_access_cb = check_user_access_cb
         self.show_user_ids_cb = show_user_ids_cb
         self.set_pwm_cb = set_pwm_cb
+        self.set_max_lux_cb = set_max_lux_cb
         self.widgets = {}
 
     def build_layout(self):
@@ -69,18 +70,40 @@ class HMIWidgets:
                     self.widgets[f'{name}_pwm_slider'] = pwm_slider
                     self.widgets[f'{name}_pwm_toggle_btn'] = toggle_btn
         self.widgets['lock_frame'] = lock_frame
-        self.widgets['light_frame'] = light_frame
-
-        # Right panel: Trend chart
+        self.widgets['light_frame'] = light_frame        # Right panel: Trend chart
         right_panel = tk.LabelFrame(main_frame, text="Trend Visualization", font=("Arial", 10, "bold"), padx=8, pady=8)
         right_panel.grid(row=0, column=1, sticky='nsew', padx=8, pady=8)
         main_frame.grid_columnconfigure(1, weight=1)
         main_frame.grid_rowconfigure(0, weight=1)
         tk.Label(right_panel, text="Lux Trend", font=("Arial", 10, "bold")).pack(anchor="w", padx=5, pady=(5,0))
+        
+        # Add max lux limit controls
+        if self.set_max_lux_cb:
+            lux_controls_frame = tk.Frame(right_panel)
+            lux_controls_frame.pack(anchor="w", padx=5, pady=(0,5))
+            tk.Label(lux_controls_frame, text="Max Lux:").pack(side='left')
+            max_lux_entry = tk.Entry(lux_controls_frame, width=8)
+            max_lux_entry.insert(0, "115")
+            max_lux_entry.pack(side='left', padx=2)
+            
+            def apply_max_lux():
+                try:
+                    value = max_lux_entry.get().strip()
+                    if not value.isdigit():
+                        raise ValueError("Invalid number")
+                    limit = int(value)
+                    self.set_max_lux_cb(limit)
+                except ValueError:
+                    messagebox.showerror('Error', 'Please enter a valid number')
+            
+            max_lux_entry.bind('<Return>', lambda event: apply_max_lux())
+            tk.Button(lux_controls_frame, text="Apply", command=apply_max_lux).pack(side='left', padx=2)
+            self.widgets['max_lux_entry'] = max_lux_entry
+        
         lux_fig = Figure(figsize=(3.5, 1.5), dpi=90)
         lux_ax = lux_fig.add_subplot(111)
-        lux_ax.set_ylim(0, 12)
-        lux_ax.set_yticks([i for i in range(0, 13)])
+        lux_ax.set_ylim(0, 115)
+        lux_ax.set_yticks([i for i in range(0, 116, 5)])
         lux_ax.set_ylabel('Lux')
         lux_ax.set_xlabel('Time')
         lux_canvas = FigureCanvasTkAgg(lux_fig, master=right_panel)

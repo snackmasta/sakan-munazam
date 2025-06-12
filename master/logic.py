@@ -2,9 +2,10 @@ from filterpy.kalman import KalmanFilter
 import numpy as np
 
 class LuxTrendLogic:
-    def __init__(self, max_lux_points=75):
+    def __init__(self, max_lux_points=75, max_lux_limit=115):
         self.lux_data = []
         self.max_lux_points = max_lux_points
+        self.max_lux_limit = max_lux_limit
         # Kalman filter for each device
         self.kalman_filters = {
             'light_207': self._create_kalman_filter(),
@@ -56,8 +57,8 @@ class LuxTrendLogic:
     def draw_lux_trend(self, ax, canvas):
         ax.clear()
         if not self.lux_data:
-            ax.set_ylim(0, 75)
-            ax.set_yticks([i for i in range(0, 76, 5)])
+            ax.set_ylim(0, self.max_lux_limit)
+            ax.set_yticks([i for i in range(0, self.max_lux_limit + 1, 5)])
             ax.set_ylabel('Lux')
             ax.set_xlabel('Sample')
             ax.grid(True, linestyle='--', alpha=0.5)
@@ -71,11 +72,19 @@ class LuxTrendLogic:
         if data_208:
             x_208, y_208 = zip(*data_208)
             ax.plot(x_208, y_208, color='blue', label='light_208')
-        ax.set_ylim(0, 75)
-        ax.set_yticks([i for i in range(0, 76, 5)])
+        ax.set_ylim(0, self.max_lux_limit)
+        ax.set_yticks([i for i in range(0, self.max_lux_limit + 1, 5)])
         ax.set_ylabel('Lux')
         ax.set_xlabel('Sample')
         ax.legend(loc='upper right', fontsize=8)
         ax.grid(True, linestyle='--', alpha=0.5)
         ax.figure.tight_layout()
         canvas.draw()
+
+    def set_max_lux_limit(self, limit):
+        """Update the maximum lux limit for the trend chart"""
+        self.max_lux_limit = limit
+
+    def get_max_lux_limit(self):
+        """Get the current maximum lux limit"""
+        return self.max_lux_limit
