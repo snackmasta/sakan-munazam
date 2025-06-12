@@ -78,8 +78,7 @@ class MasterHMI(tk.Tk):
             udp_listen_port=4210,
             log_callback=self.log,
             incoming_callback=self.log_incoming,
-            stop_event=self._stop_event,
-            hmi_ref=self  # Pass reference to self for auto reservation logic
+            stop_event=self._stop_event
         )
         # GUI widgets
         self.widgets = HMIWidgets(
@@ -265,33 +264,6 @@ class MasterHMI(tk.Tk):
                 canvas = self.alarm_canvases[device_name]
                 canvas.delete("all")
                 canvas.create_oval(2, 2, 18, 18, fill='gray', outline='black')
-
-    def broadcast_light_on_for_room(self, lock_device_id):
-        # Find the corresponding light device for the lock
-        room = lock_device_id.split('_')[1]
-        light_device_id = f'light_{room}'
-        if light_device_id in DEVICES:
-            self.broadcast_mesh_command(light_device_id, 'ON')
-            self.log(f"[AUTO] Broadcasted ON to {light_device_id}")
-
-    def auto_reservation_light_unlock(self, lock_device_id, reservation_seconds=10):
-        # Turn ON light, then after reservation_seconds turn OFF, UNLOCK, then LOCK after 3s
-        self.broadcast_light_on_for_room(lock_device_id)
-        room = lock_device_id.split('_')[1]
-        light_device_id = f'light_{room}'
-        def turn_off_and_unlock():
-            if light_device_id in DEVICES:
-                self.broadcast_mesh_command(light_device_id, 'OFF')
-                self.log(f"[AUTO] Broadcasted OFF to {light_device_id}")
-            # UNLOCK lock
-            self.broadcast_mesh_command(lock_device_id, 'UNLOCK')
-            self.log(f"[AUTO] Broadcasted UNLOCK to {lock_device_id}")
-            # LOCK after 3 seconds
-            def lock_again():
-                self.broadcast_mesh_command(lock_device_id, 'LOCK')
-                self.log(f"[AUTO] Broadcasted LOCK to {lock_device_id}")
-            self.after(3000, lock_again)
-        self.after(reservation_seconds * 1000, turn_off_and_unlock)
 
 if __name__ == '__main__':
     app = MasterHMI()
