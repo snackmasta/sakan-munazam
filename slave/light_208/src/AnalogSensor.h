@@ -21,6 +21,11 @@ public:
 
   void setCalibration(int inMin, int inMax, int outMin, int outMax);
 
+  // --- Debug getters for calibration ---
+  uint8_t getCalibrationDegree() const;
+  float getCalibrationCoeff(uint8_t i) const;
+  uint8_t getCalibrationCoeffCount() const;
+
 private:
   uint8_t analogPin;
   int inMin, inMax, outMin, outMax;

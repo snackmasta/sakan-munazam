@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.22"
+#define CURRENT_VERSION "1.0.21"
 #define DEVICE_ID "light_207"
 
 // WiFi credentials
@@ -58,6 +58,13 @@ void setup() {
     
     ldrSensor.begin();
     ldrSensor.loadCalibration();
+    Serial.print("[CALIBRATION] Loaded. Degree: ");
+    Serial.print(ldrSensor.getCalibrationDegree());
+    Serial.print(" Coeffs: ");
+    for (int i = 0; i < 3; ++i) {
+        Serial.print(ldrSensor.getCalibrationCoeff(i)); Serial.print(" ");
+    }
+    Serial.println();
     
     // Initialize UDP and OTA handlers
     udpHandler.begin();
@@ -83,13 +90,16 @@ void handleCalibrationCommand(String message) {
         lastPos = nextPos + 1;
     }
     ldrSensor.setCalibrationCoeffs(coeffs, degree);
-    Serial.print("Calibration set. Degree: ");
+    Serial.print("[CALIBRATION] Set. Degree: ");
     Serial.print(degree);
     Serial.print(" Coeffs: ");
     for (int i = 0; i <= degree; ++i) {
         Serial.print(coeffs[i]); Serial.print(" ");
     }
     Serial.println();
+    // Immediately save and print confirmation
+    ldrSensor.saveCalibration();
+    Serial.println("[CALIBRATION] Saved to EEPROM.");
 }
 
 void handleUDPMessage(String message) {
@@ -194,6 +204,29 @@ void loop() {
             int raw = ldrSensor.readRaw();
             float currentLux = ldrSensor.calibratedLux(raw);
             if (currentLux < 0) currentLux = ldrSensor.readLux(LDR_FIXED_R);
+            // Debug: Print calibration coefficients and calculation
+            Serial.print("[DEBUG] Calibration degree: ");
+            Serial.println(ldrSensor.getCalibrationDegree());
+            Serial.print("[DEBUG] Calibration coeffs: ");
+            for (int i = 0; i < 3; ++i) {
+                Serial.print(ldrSensor.getCalibrationCoeff(i)); Serial.print(" ");
+            }
+            Serial.println();
+            Serial.print("[DEBUG] Raw: "); Serial.print(raw);
+            Serial.print("  Calculated Lux: "); Serial.println(currentLux, 4);
+            // Show formula used
+            float c0 = ldrSensor.getCalibrationCoeff(0);
+            float c1 = ldrSensor.getCalibrationCoeff(1);
+            float c2 = ldrSensor.getCalibrationCoeff(2);
+            Serial.print("[DEBUG] Formula: lux = ");
+            Serial.print(c0); Serial.print(" + ");
+            Serial.print(c1); Serial.print("*raw + ");
+            Serial.print(c2); Serial.print("*raw^2");
+            Serial.println();
+            float expectedLux = c0 + c1 * raw + c2 * raw * raw;
+            Serial.print("[DEBUG] Formula result for raw ");
+            Serial.print(raw); Serial.print(": ");
+            Serial.println(expectedLux, 4);
             String status = String(DEVICE_ID) + ":" + 
                            (lightState ? "ON" : "OFF") + ":" +
                            String(currentLux, 1) + ":" +
@@ -219,7 +252,11 @@ void loop() {
             Serial.print("[DEBUG] Manual override PWM: ");
             Serial.println(currentPWM);
         }
-        if (response.indexOf(":") > 0) {
+        // Mesh command format: ip:cmd:ttl (should have exactly two colons)
+        int firstColon = response.indexOf(':');
+        int secondColon = response.indexOf(':', firstColon + 1);
+        int thirdColon = response.indexOf(':', secondColon + 1);
+        if (firstColon > 0 && secondColon > firstColon && thirdColon == -1) {
             handleMeshCommand(response);
         } else {
             handleUDPMessage(response);

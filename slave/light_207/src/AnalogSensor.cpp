@@ -48,6 +48,20 @@ void AnalogSensor::saveCalibration() {
   EEPROM.commit();
 }
 
+// --- Debug getters for calibration ---
+uint8_t AnalogSensor::getCalibrationDegree() const {
+  return calibration.degree;
+}
+
+float AnalogSensor::getCalibrationCoeff(uint8_t i) const {
+  if (i < 3) return calibration.coeffs[i];
+  return 0.0f;
+}
+
+uint8_t AnalogSensor::getCalibrationCoeffCount() const {
+  return calibration.degree;
+}
+
 void AnalogSensor::setCalibrationCoeffs(float* coeffs, uint8_t degree) {
   calibration.degree = degree;
   for (int i = 0; i < 3; ++i) calibration.coeffs[i] = (i < degree+1) ? coeffs[i] : 0.0f;
