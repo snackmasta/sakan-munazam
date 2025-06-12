@@ -1,4 +1,5 @@
 const Reservation = require('../models/reservation');
+const User = require('../models/user');
 
 class ReservationController {
     constructor(reservationModel = Reservation) {
@@ -11,10 +12,15 @@ class ReservationController {
 
     async createReservation(req, res) {
         try {
-            const { room_id, user_id, date, start_time, end_time } = req.body;
+            const { room_id, user_id: nim, date, start_time, end_time } = req.body;
+            // Find UID by NIM
+            const user = await User.findOne({ where: { nim } });
+            if (!user || !user.rfid_UID) {
+                return res.status(400).json({ message: 'NIM not found or user has no UID in users table' });
+            }
             const newReservation = await this.reservationModel.create({
                 room_id,
-                user_id,
+                user_id: user.rfid_UID, // Insert UID from users table
                 date,
                 start_time,
                 end_time
