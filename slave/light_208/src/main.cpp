@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.22"
+#define CURRENT_VERSION "1.0.26"
 #define DEVICE_ID "light_208"
 
 // WiFi credentials
@@ -111,6 +111,11 @@ void handleUDPMessage(String message) {
         lightState = false;
         analogWrite(LIGHT_PIN, 0);
         currentPWM = 0;
+        // Send OFF status back to master
+        String status = String(DEVICE_ID) + ":OFF:0:0:0";
+        IPAddress masterIP(192,168,137,1); // Set to your master server IP
+        uint16_t masterPort = 4210;        // Set to your master server UDP port
+        udpHandler.sendTo(status.c_str(), masterIP, masterPort);
     } else if (message == "PWM_MANUAL") {
         autoMode = false;
         Serial.println("Switched to MANUAL PWM mode");
