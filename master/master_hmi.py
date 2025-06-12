@@ -16,6 +16,7 @@ from network import MasterNetworkHandler
 from gui import HMIWidgets
 from logic import LuxTrendLogic
 from alarm_placeholder import create_alarm_placeholder  # Import the alarm placeholder module
+from reservation_manager import ReservationManager
 
 # Device info (update as needed)
 DEVICES = {
@@ -135,10 +136,11 @@ class MasterHMI(tk.Tk):
             'lock_207': 'light_207',
             'lock_208': 'light_208',
         }
+        self.reservation_manager = ReservationManager(self.lock_to_light, DEVICES)
         # Track which lights are ON due to reservation
         self.reserved_lights_on = {}
         # Start periodic reservation check
-        self.after(60000, self.check_reservation_expiry)  # every 60 seconds
+        self.after(1000, self.periodic_reservation_check)
 
     def send_command(self, device_name, command):
         try:
@@ -162,6 +164,10 @@ class MasterHMI(tk.Tk):
         # Parse lux value from incoming data and update trend
         self._update_lux_from_msg(msg)
 
+    def periodic_reservation_check(self):
+        self.reservation_manager.check_reservation_expiry(self.send_command)
+        self.after(1000, self.periodic_reservation_check)
+
     def _update_led_status(self, msg):
         # Expecting format: From (...): device_id:STATE:...
         try:
@@ -175,13 +181,12 @@ class MasterHMI(tk.Tk):
                 if msg.startswith(dev + ':ON') or msg.startswith(dev + ':UNLOCKED'):
                     self.led_vars[dev].set('ON' if 'light' in dev else 'UNLOCKED')
                     indicator.config(bg='green')
-                    # If a lock is unlocked, turn on the corresponding light if reserved
                     if dev in self.lock_to_light and msg.startswith(dev + ':UNLOCKED'):
                         light_dev = self.lock_to_light[dev]
-                        reserved, _ = self.is_room_reserved_for_device(dev)
+                        reserved, _ = self.reservation_manager.is_room_reserved_for_device(dev)
                         if reserved:
                             self.send_command(light_dev, 'ON')
-                            self.reserved_lights_on[light_dev] = True
+                            self.reservation_manager.reserved_lights_on[light_dev] = True
                 elif msg.startswith(dev + ':OFF') or msg.startswith(dev + ':LOCKED'):
                     self.led_vars[dev].set('OFF' if 'light' in dev else 'LOCKED')
                     indicator.config(bg='gray')
@@ -234,14 +239,7 @@ class MasterHMI(tk.Tk):
         messagebox.showinfo('User IDs', msg)
 
     def check_user_access(self, user_id, ip_address):
-        allowed = sql.is_access_allowed(user_id, ip_address)
-        # One-time access logic
-        for lock_dev, last_uid in getattr(self, 'one_time_access', {}).items():
-            if user_id == last_uid and DEVICES[lock_dev]['ip'] == ip_address:
-                # Allow one-time access, then revoke
-                del self.one_time_access[lock_dev]
-                allowed = True
-                break
+        allowed = self.reservation_manager.check_user_access(user_id, ip_address)
         if allowed:
             messagebox.showinfo('Access', f'User {user_id} is allowed for {ip_address}')
         else:
@@ -288,91 +286,6 @@ class MasterHMI(tk.Tk):
                 canvas = self.alarm_canvases[device_name]
                 canvas.delete("all")
                 canvas.create_oval(2, 2, 18, 18, fill='gray', outline='black')
-
-    def is_room_reserved_for_device(self, lock_device):
-        """Check if the room for the given lock device is currently reserved, and return reservation end time if exists."""
-        try:
-            ip_address = DEVICES[lock_device]['ip']
-            from utils import sql
-            connection = sql.get_connection()
-            cursor = connection.cursor(buffered=True)
-            cursor.execute("SELECT room_id FROM slave WHERE ip_address = %s", (ip_address,))
-            row = cursor.fetchone()
-            if not row:
-                return False, None
-            room_id = row[0]
-            now = sql.datetime.now()
-            today = now.strftime('%Y-%m-%d')
-            current_time = now.strftime('%H:%M:%S')
-            query = (
-                "SELECT end_time FROM room_reservations "
-                "WHERE room_id = %s "
-                "AND date = %s AND start_time <= %s AND end_time >= %s"
-            )
-            cursor.execute(query, (room_id, today, current_time, current_time))
-            result = cursor.fetchone()
-            cursor.close()
-            connection.close()
-            if result:
-                return True, result[0]  # end_time as string
-            else:
-                return False, None
-        except Exception as e:
-            print(f"Reservation check error: {e}")
-            return False, None
-
-    def check_reservation_expiry(self):
-        """Periodically check if any reserved light should be turned off, with 3s grace after end_time. Also allow last reservee UID one-time access after reservation ends (revoked after 1 minute)."""
-        try:
-            from utils import sql
-            if not hasattr(self, 'one_time_access'):
-                self.one_time_access = {}
-            if not hasattr(self, 'one_time_access_time'):
-                self.one_time_access_time = {}
-            for lock_dev, light_dev in self.lock_to_light.items():
-                if self.reserved_lights_on.get(light_dev):
-                    reserved, end_time = self.is_room_reserved_for_device(lock_dev)
-                    if not reserved:
-                        ip_address = DEVICES[lock_dev]['ip']
-                        connection = sql.get_connection()
-                        cursor = connection.cursor(buffered=True)
-                        cursor.execute("SELECT room_id FROM slave WHERE ip_address = %s", (ip_address,))
-                        row = cursor.fetchone()
-                        if row:
-                            room_id = row[0]
-                            now = sql.datetime.now()
-                            today = now.strftime('%Y-%m-%d')
-                            cursor.execute(
-                                "SELECT user_id, end_time FROM room_reservations WHERE room_id = %s AND date = %s AND end_time < %s ORDER BY end_time DESC LIMIT 1",
-                                (room_id, today, now.strftime('%H:%M:%S'))
-                            )
-                            last_res = cursor.fetchone()
-                            cursor.close()
-                            connection.close()
-                            if last_res:
-                                from datetime import datetime, timedelta
-                                end_dt = datetime.strptime(f"{today} {last_res[1]}", "%Y-%m-%d %H:%M:%S")
-                                seconds_since_end = (now - end_dt).total_seconds()
-                                if seconds_since_end < 3:
-                                    # Grant one-time access to last_res[0] (UID) and record time
-                                    self.one_time_access[lock_dev] = last_res[0]
-                                    self.one_time_access_time[lock_dev] = now
-                                    continue  # Still within 3s grace, do not turn off
-                        # Otherwise, turn off immediately after 3s
-                        self.send_command(light_dev, 'OFF')
-                        self.reserved_lights_on[light_dev] = False
-                else:
-                    # Clean up one_time_access if 1 minute after reservation end
-                    if lock_dev in getattr(self, 'one_time_access', {}):
-                        if lock_dev in self.one_time_access_time:
-                            now = sql.datetime.now()
-                            access_time = self.one_time_access_time[lock_dev]
-                            if (now - access_time).total_seconds() > 60:
-                                del self.one_time_access[lock_dev]
-                                del self.one_time_access_time[lock_dev]
-        except Exception as e:
-            print(f"Reservation expiry check error: {e}")
-        self.after(1000, self.check_reservation_expiry)  # check every second for accuracy
 
 if __name__ == '__main__':
     app = MasterHMI()
