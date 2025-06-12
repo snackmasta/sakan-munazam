@@ -3,7 +3,7 @@ import time
 
 # Try to discover endpoints first
 try:
-    discovery_client = Client("opc.tcp://ALICE:49320")
+    discovery_client = Client("opc.tcp://192.168.100.115:49320")
     endpoints = discovery_client.connect_and_get_server_endpoints()
     print("Discovered endpoints:")
     for ep in endpoints:
@@ -13,7 +13,7 @@ except Exception as e:
     print(f"Endpoint discovery failed: {e}")
 
 # Now try to connect as before
-client = Client("opc.tcp://ALICE:49320")
+client = Client("opc.tcp://192.168.100.115:49320")
 
 def browse_node(node, level=0, max_depth=2):
     indent = "  " * level
