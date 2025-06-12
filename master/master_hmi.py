@@ -136,6 +136,7 @@ class MasterHMI(tk.Tk):
             'lock_207': 'light_207',
             'lock_208': 'light_208',
         }
+        self.devices = DEVICES  # <-- Fix: make devices available as self.devices
         self.reservation_manager = ReservationManager(self.lock_to_light, DEVICES)
         # Track which lights are ON due to reservation
         self.reserved_lights_on = {}
@@ -149,20 +150,75 @@ class MasterHMI(tk.Tk):
             messagebox.showerror('Error', f"Failed to send command: {e}")
 
     def log(self, msg):
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.log_area.config(state='normal')
-        self.log_area.insert('end', msg + '\n')
+        self.log_area.insert('end', f"[{timestamp}] {msg}\n")
         self.log_area.see('end')
         self.log_area.config(state='disabled')
 
-    def log_incoming(self, msg):
+    def log_incoming(self, msg_with_source): # Renamed to avoid confusion with internal msg variable
         self.incoming_log_area.config(state='normal')
-        self.incoming_log_area.insert('end', msg + '\n')
+        self.incoming_log_area.insert('end', msg_with_source + '\n')
         self.incoming_log_area.see('end')
         self.incoming_log_area.config(state='disabled')
-        # Update LED status based on incoming message
-        self._update_led_status(msg)
-        # Parse lux value from incoming data and update trend
-        self._update_lux_from_msg(msg)
+
+        original_msg_content = ""
+        source_ip = None
+
+        try:
+            # Parse "From ('IP', PORT): CONTENT"
+            if msg_with_source.startswith("From (") and "): " in msg_with_source:
+                parts = msg_with_source.split("): ", 1)
+                source_info = parts[0] # "From ('IP', PORT)"
+                original_msg_content = parts[1]
+
+                source_ip_str = source_info.split("('")[1].split("',")[0]
+                source_ip = source_ip_str # Store the IP of the sender
+            else:
+                original_msg_content = msg_with_source
+                # source_ip remains None if not in "From..." format
+
+            # --- One-Time Access Check ---
+            if source_ip and original_msg_content:
+                content_parts = original_msg_content.split(':', 1) # Split only on the first colon, e.g., "lock_208" and "04:47:43:12:7A:6A:80"
+                
+                if len(content_parts) == 2:
+                    device_name_from_msg = content_parts[0]
+                    potential_uid = content_parts[1]
+                    
+                    actual_device_name_for_ip = None
+                    for dev_key, dev_info in self.devices.items():
+                        if dev_info['ip'] == source_ip and dev_info['type'] == 'lock':
+                            actual_device_name_for_ip = dev_key
+                            break
+                    
+                    if actual_device_name_for_ip and device_name_from_msg == actual_device_name_for_ip:
+                        # Heuristic: UID has multiple colons (e.g., MAC address format) and is not a simple status.
+                        is_likely_uid = potential_uid.count(':') >= 5 and not any(status_keyword in potential_uid for status_keyword in ['ON', 'OFF', 'LOCKED', 'UNLOCKED', 'PWM'])
+
+                        if is_likely_uid:
+                            print(f"[HMI_DEBUG] Incoming UID for one-time access check: device='{actual_device_name_for_ip}', uid='{potential_uid}', source_ip='{source_ip}'")
+                            # Call reservation_manager's check_user_access directly.
+                            # The boolean return is not used here to show a messagebox for this automatic flow.
+                            self.reservation_manager.check_user_access(
+                                user_id=potential_uid,
+                                ip_address=source_ip, # IP of the lock device that sent the UID
+                                send_command=self.send_command
+                            )
+                            # Do not pass this specific UID message to _update_led_status if it was handled as one-time access.
+                            # Let further status changes (like UNLOCKED after command) be handled normally.
+                            # However, to prevent _update_led_status from misinterpreting it, we can return early or pass a modified message.
+                            # For now, let _update_led_status run; it should ignore this format.
+
+        except Exception as e:
+            print(f"[HMI_DEBUG] Error in log_incoming parsing for one-time access: {e}, Original message: {msg_with_source}")
+
+        # Determine message content for downstream handlers (_update_led_status, _update_lux_from_msg)
+        msg_for_downstream_handlers = original_msg_content if original_msg_content else msg_with_source
+        
+        self._update_led_status(msg_for_downstream_handlers)
+        self._update_lux_from_msg(msg_for_downstream_handlers)
 
     def periodic_reservation_check(self):
         self.reservation_manager.check_reservation_expiry(self.send_command)
@@ -239,7 +295,7 @@ class MasterHMI(tk.Tk):
         messagebox.showinfo('User IDs', msg)
 
     def check_user_access(self, user_id, ip_address):
-        allowed = self.reservation_manager.check_user_access(user_id, ip_address)
+        allowed = self.reservation_manager.check_user_access(user_id, ip_address, send_command=self.send_command)
         if allowed:
             messagebox.showinfo('Access', f'User {user_id} is allowed for {ip_address}')
         else:
