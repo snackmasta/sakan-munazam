@@ -6,13 +6,14 @@ from utils import sql
 from threading import Timer
 
 class MasterNetworkHandler:
-    def __init__(self, devices, udp_listen_port, log_callback, incoming_callback, stop_event=None):
+    def __init__(self, devices, udp_listen_port, log_callback, incoming_callback, stop_event=None, hmi_ref=None):
         self.devices = devices
         self.udp_listen_port = udp_listen_port
         self.log_callback = log_callback  # function to log outgoing
         self.incoming_callback = incoming_callback  # function to log incoming
         self.incoming_queue = queue.Queue()
         self._stop_event = stop_event or threading.Event()
+        self.hmi_ref = hmi_ref  # Reference to MasterHMI for auto light logic
         self.udp_thread = threading.Thread(target=self.listen_udp, daemon=True)
         self.udp_thread.start()
 
@@ -61,11 +62,15 @@ class MasterNetworkHandler:
                             if sql.is_access_allowed(uid, ip_address):
                                 for name, info in self.devices.items():
                                     if info['ip'] == ip_address and info['type'] == 'lock':
-                                        # Send mesh UNLOCK broadcast for this lock
-                                        self.broadcast_mesh_command(name, 'UNLOCK')
-                                        self.log_callback(f"[AUTO] UID {uid} allowed for {ip_address}, sent UNLOCK broadcast.")
-                                        # Schedule LOCK broadcast after 2 seconds
-                                        Timer(2.0, lambda: self.broadcast_mesh_command(name, 'LOCK')).start()
+                                        # --- NEW: Call HMI auto reservation logic ---
+                                        if self.hmi_ref:
+                                            # 10 seconds reservation, can be changed
+                                            self.hmi_ref.auto_reservation_light_unlock(name, reservation_seconds=10)
+                                        else:
+                                            # Fallback: just unlock/lock as before
+                                            self.broadcast_mesh_command(name, 'UNLOCK')
+                                            self.log_callback(f"[AUTO] UID {uid} allowed for {ip_address}, sent UNLOCK broadcast.")
+                                            Timer(2.0, lambda: self.broadcast_mesh_command(name, 'LOCK')).start()
                                         break
                 except Exception as e:
                     self.log_callback(f"[AUTO] Error in auto-unlock: {e}")
