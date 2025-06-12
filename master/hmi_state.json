@@ -1,0 +1,36 @@
+{
+  "leds": {
+    "lock_207": "OFF",
+    "lock_208": "OFF",
+    "light_207": "OFF",
+    "light_208": "OFF"
+  },
+  "alarms": {
+    "lock_207": {
+      "blinking": false,
+      "acknowledged": false,
+      "color": "gray"
+    },
+    "lock_208": {
+      "blinking": false,
+      "acknowledged": false,
+      "color": "gray"
+    },
+    "light_207": {
+      "blinking": false,
+      "acknowledged": false,
+      "color": "gray"
+    },
+    "light_208": {
+      "blinking": false,
+      "acknowledged": false,
+      "color": "gray"
+    }
+  },
+  "maintenance": {
+    "207": false,
+    "208": false
+  },
+  "reservations": {},
+  "reserved_lights_on": {}
+}

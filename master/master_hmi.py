@@ -5,6 +5,7 @@ import matplotlib
 import time
 import threading
 import socket
+import json
 matplotlib.use('Agg')  # Use non-interactive backend for safety
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -420,6 +421,37 @@ class MasterHMI(tk.Tk):
             indicator = self.maintenance_indicators[room]
             indicator.config(bg='orange' if on else 'gray')
 
+    def get_hmi_state_json(self):
+        """Collect all HMI component states and return as JSON string."""
+        state = {
+            'leds': {dev: self.led_vars[dev].get() for dev in self.led_vars},
+            'alarms': {
+                dev: {
+                    'blinking': getattr(canvas, '_blinking', False),
+                    'acknowledged': getattr(canvas, '_acknowledged', False),
+                    'color': canvas.itemcget('all', 'fill')
+                } for dev, canvas in self.alarm_canvases.items()
+            },
+            'maintenance': {
+                room: self.maintenance_indicators[room].cget('bg') == 'orange' for room in self.maintenance_indicators
+            },
+            'reservations': self.reservation_manager.get_reservation_state() if hasattr(self.reservation_manager, 'get_reservation_state') else {},
+            'reserved_lights_on': self.reservation_manager.reserved_lights_on if hasattr(self.reservation_manager, 'reserved_lights_on') else {},
+        }
+        return json.dumps(state, indent=2)
+
+    def write_hmi_state_json(self, path='hmi_state.json'):
+        """Write the current HMI state to a JSON file."""
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(self.get_hmi_state_json())
+        except Exception as e:
+            print(f"[HMI_DEBUG] Failed to write HMI state JSON: {e}")
+
+    def periodic_hmi_state_update(self):
+        self.write_hmi_state_json()
+        self.after(500, self.periodic_hmi_state_update)
+
     def destroy(self):
         self._stop_event.set()
         self.heartbeat_listener.stop()
@@ -428,4 +460,5 @@ class MasterHMI(tk.Tk):
 if __name__ == '__main__':
     app = MasterHMI()
     app.after(100, app.show_server_log)  # Show last 50 incoming log lines from server.log on startup
+    app.after(200, app.periodic_hmi_state_update)  # Start periodic HMI state JSON update
     app.mainloop()
