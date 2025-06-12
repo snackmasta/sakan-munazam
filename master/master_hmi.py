@@ -322,16 +322,17 @@ class MasterHMI(tk.Tk):
             return False, None
 
     def check_reservation_expiry(self):
-        """Periodically check if any reserved light should be turned off, with 3s grace after end_time. Also allow last reservee UID one-time access after reservation ends."""
+        """Periodically check if any reserved light should be turned off, with 3s grace after end_time. Also allow last reservee UID one-time access after reservation ends (revoked after 1 minute)."""
         try:
             from utils import sql
-            if not hasattr(self, 'one_time_access'):  # Track one-time access per lock
+            if not hasattr(self, 'one_time_access'):
                 self.one_time_access = {}
+            if not hasattr(self, 'one_time_access_time'):
+                self.one_time_access_time = {}
             for lock_dev, light_dev in self.lock_to_light.items():
                 if self.reserved_lights_on.get(light_dev):
                     reserved, end_time = self.is_room_reserved_for_device(lock_dev)
                     if not reserved:
-                        # Check if reservation ended less than 3 seconds ago
                         ip_address = DEVICES[lock_dev]['ip']
                         connection = sql.get_connection()
                         cursor = connection.cursor(buffered=True)
@@ -341,7 +342,6 @@ class MasterHMI(tk.Tk):
                             room_id = row[0]
                             now = sql.datetime.now()
                             today = now.strftime('%Y-%m-%d')
-                            # Get the latest reservation for today before now
                             cursor.execute(
                                 "SELECT user_id, end_time FROM room_reservations WHERE room_id = %s AND date = %s AND end_time < %s ORDER BY end_time DESC LIMIT 1",
                                 (room_id, today, now.strftime('%H:%M:%S'))
@@ -352,38 +352,24 @@ class MasterHMI(tk.Tk):
                             if last_res:
                                 from datetime import datetime, timedelta
                                 end_dt = datetime.strptime(f"{today} {last_res[1]}", "%Y-%m-%d %H:%M:%S")
-                                if (now - end_dt).total_seconds() < 3:
-                                    # Grant one-time access to last_res[0] (UID)
+                                seconds_since_end = (now - end_dt).total_seconds()
+                                if seconds_since_end < 3:
+                                    # Grant one-time access to last_res[0] (UID) and record time
                                     self.one_time_access[lock_dev] = last_res[0]
+                                    self.one_time_access_time[lock_dev] = now
                                     continue  # Still within 3s grace, do not turn off
-                        # Otherwise, turn off
+                        # Otherwise, turn off immediately after 3s
                         self.send_command(light_dev, 'OFF')
                         self.reserved_lights_on[light_dev] = False
                 else:
-                    # Clean up one_time_access if grace period is over
+                    # Clean up one_time_access if 1 minute after reservation end
                     if lock_dev in getattr(self, 'one_time_access', {}):
-                        # Check if grace period is over
-                        ip_address = DEVICES[lock_dev]['ip']
-                        connection = sql.get_connection()
-                        cursor = connection.cursor(buffered=True)
-                        cursor.execute("SELECT room_id FROM slave WHERE ip_address = %s", (ip_address,))
-                        row = cursor.fetchone()
-                        if row:
-                            room_id = row[0]
+                        if lock_dev in self.one_time_access_time:
                             now = sql.datetime.now()
-                            today = now.strftime('%Y-%m-%d')
-                            cursor.execute(
-                                "SELECT end_time FROM room_reservations WHERE room_id = %s AND date = %s AND end_time < %s ORDER BY end_time DESC LIMIT 1",
-                                (room_id, today, now.strftime('%H:%M:%S'))
-                            )
-                            last_end = cursor.fetchone()
-                            cursor.close()
-                            connection.close()
-                            if last_end:
-                                from datetime import datetime, timedelta
-                                end_dt = datetime.strptime(f"{today} {last_end[0]}", "%Y-%m-%d %H:%M:%S")
-                                if (now - end_dt).total_seconds() > 10:  # 10s after end, revoke
-                                    del self.one_time_access[lock_dev]
+                            access_time = self.one_time_access_time[lock_dev]
+                            if (now - access_time).total_seconds() > 60:
+                                del self.one_time_access[lock_dev]
+                                del self.one_time_access_time[lock_dev]
         except Exception as e:
             print(f"Reservation expiry check error: {e}")
         self.after(1000, self.check_reservation_expiry)  # check every second for accuracy
