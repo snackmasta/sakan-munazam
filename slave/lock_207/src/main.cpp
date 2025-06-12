@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.13"
+#define CURRENT_VERSION "1.0.14"
 #define DEVICE_ID "lock_207"
 
 const char* ssid = "ALICE";
@@ -15,6 +15,12 @@ const char* password = "@channel";
 // Define the GPIO pin for the lock control
 #define LOCK_GPIO_PIN 15
 #define MASTER_UDP_PORT 4210
+
+// Heartbeat UDP settings
+#define HEARTBEAT_PORT 4220
+#define MASTER_HEARTBEAT_IP IPAddress(192,168,137,1)
+#define HEARTBEAT_INTERVAL 500
+unsigned long lastHeartbeat = 0;
 
 WiFiUDPHandler udpHandler(ssid, password);
 LockControl lockController(LOCK_GPIO_PIN);
@@ -96,7 +102,14 @@ void handleUDPMessage(String message) {
     }
 }
 
+void sendHeartbeat() {
+    String msg = String(DEVICE_ID) + ":HEARTBEAT";
+    udpHandler.sendTo(msg.c_str(), MASTER_HEARTBEAT_IP, HEARTBEAT_PORT);
+}
+
 void loop() {
+    unsigned long currentMillis = millis();
+    
     // 1. Check for card and send UID to master if detected
     if (isCardDetected()) {
         String uid = getCardUID();
@@ -118,6 +131,12 @@ void loop() {
         } else {
             handleUDPMessage(data);
         }
+    }
+
+    // Send heartbeat
+    if (currentMillis - lastHeartbeat >= HEARTBEAT_INTERVAL) {
+        lastHeartbeat = currentMillis;
+        sendHeartbeat();
     }
 
     delay(10); // Small delay to avoid busy loop

@@ -4,6 +4,7 @@ import os
 import matplotlib
 import time
 import threading
+import socket
 matplotlib.use('Agg')  # Use non-interactive backend for safety
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -14,6 +15,7 @@ from utils import sql
 from network import MasterNetworkHandler
 from gui import HMIWidgets
 from logic import LuxTrendLogic
+from alarm_placeholder import create_alarm_placeholder  # Import the alarm placeholder module
 
 # Device info (update as needed)
 DEVICES = {
@@ -22,6 +24,46 @@ DEVICES = {
     'light_207': {'ip': '192.168.137.248', 'port': 4210, 'type': 'light'},
     'light_208': {'ip': '192.168.137.247', 'port': 4210, 'type': 'light'},
 }
+
+class HeartbeatListener(threading.Thread):
+    def __init__(self, device_names, alarm_callback, port=4220, timeout=1.0):
+        super().__init__(daemon=True)
+        self.device_names = device_names
+        self.alarm_callback = alarm_callback  # function(device_name, alarm_on: bool)
+        self.port = port
+        self.timeout = timeout
+        self.last_heartbeat = {dev: time.time() for dev in device_names}
+        self.running = True
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("", self.port))
+        self.sock.settimeout(0.2)
+
+    def run(self):
+        while self.running:
+            now = time.time()
+            # Check for lost heartbeat
+            for dev, last in self.last_heartbeat.items():
+                if now - last > self.timeout:
+                    self.alarm_callback(dev, True)
+                else:
+                    self.alarm_callback(dev, False)
+            # Listen for heartbeats
+            try:
+                data, addr = self.sock.recvfrom(128)
+                msg = data.decode(errors='replace').strip()
+                # Expecting: device_id:HEARTBEAT
+                if msg.endswith(":HEARTBEAT"):
+                    dev = msg.split(":")[0]
+                    if dev in self.last_heartbeat:
+                        self.last_heartbeat[dev] = time.time()
+            except socket.timeout:
+                continue
+            except Exception:
+                continue
+
+    def stop(self):
+        self.running = False
+        self.sock.close()
 
 class MasterHMI(tk.Tk):
     def __init__(self):
@@ -58,7 +100,35 @@ class MasterHMI(tk.Tk):
         self.lux_canvas_widget = self.widgets['lux_canvas_widget']
         self.user_id_entry = self.widgets['user_id_entry']
         self.ip_entry = self.widgets['ip_entry']
+
+        # Add LED indicators and alarm placeholders for each slave device
+        self.led_vars = {}
+        self.led_labels = {}
+        self.led_indicators = {}
+        self.alarm_canvases = {}
+
+        led_frame = tk.Frame(self)
+        led_frame.pack(pady=5)
+        for dev in DEVICES:
+            var = tk.StringVar(value='OFF')
+            self.led_vars[dev] = var
+            led_label = tk.Label(led_frame, text=dev, width=10)
+            led_label.pack(side='left', padx=5)
+            self.led_labels[dev] = led_label
+            led_indicator = tk.Label(led_frame, textvariable=var, width=4, relief='sunken', bg='gray', fg='white')
+            led_indicator.pack(side='left', padx=5)
+            self.led_indicators[dev] = led_indicator
+
+            # Add circular alarm placeholder
+            alarm_canvas = create_alarm_placeholder(led_frame)
+            alarm_canvas.pack(side='left', padx=5)
+            self.alarm_canvases[dev] = alarm_canvas
+
         self.after(100, self.process_incoming_queue)
+
+        # Start heartbeat listener
+        self.heartbeat_listener = HeartbeatListener(DEVICES.keys(), self.heartbeat_alarm_callback)
+        self.heartbeat_listener.start()
 
     def send_command(self, device_name, command):
         try:
@@ -77,8 +147,29 @@ class MasterHMI(tk.Tk):
         self.incoming_log_area.insert('end', msg + '\n')
         self.incoming_log_area.see('end')
         self.incoming_log_area.config(state='disabled')
+        # Update LED status based on incoming message
+        self._update_led_status(msg)
         # Parse lux value from incoming data and update trend
         self._update_lux_from_msg(msg)
+
+    def _update_led_status(self, msg):
+        # Expecting format: From (...): device_id:STATE:...
+        try:
+            # Extract the actual message part after the last colon
+            if ":" in msg:
+                parts = msg.split(": ", 1)
+                if len(parts) == 2:
+                    msg = parts[1]
+            for dev in DEVICES:
+                indicator = self.led_indicators[dev]
+                if msg.startswith(dev + ':ON') or msg.startswith(dev + ':UNLOCKED'):
+                    self.led_vars[dev].set('ON' if 'light' in dev else 'UNLOCKED')
+                    indicator.config(bg='green')
+                elif msg.startswith(dev + ':OFF') or msg.startswith(dev + ':LOCKED'):
+                    self.led_vars[dev].set('OFF' if 'light' in dev else 'LOCKED')
+                    indicator.config(bg='gray')
+        except Exception as e:
+            print(f"LED status update error: {e}")
 
     def _update_lux_from_msg(self, msg):
         self.lux_logic.update_lux_from_msg(msg, lambda: self.lux_logic.draw_lux_trend(self.lux_ax, self.lux_canvas))
@@ -111,6 +202,7 @@ class MasterHMI(tk.Tk):
 
     def destroy(self):
         self._stop_event.set()
+        self.heartbeat_listener.stop()
         super().destroy()
 
     def broadcast_mesh_command(self, target_device, command):
@@ -157,6 +249,21 @@ class MasterHMI(tk.Tk):
             messagebox.showerror('Error', 'Invalid max lux limit value')
         except Exception as e:
             messagebox.showerror('Error', f"Failed to set max lux limit: {e}")
+
+    def heartbeat_alarm_callback(self, device_name, alarm_on):
+        """Callback function for heartbeat alarms."""
+        if alarm_on:
+            # Turn on the alarm placeholder (red)
+            if device_name in self.alarm_canvases:
+                canvas = self.alarm_canvases[device_name]
+                canvas.delete("all")
+                canvas.create_oval(2, 2, 18, 18, fill='red', outline='black')
+        else:
+            # Turn off the alarm placeholder (gray)
+            if device_name in self.alarm_canvases:
+                canvas = self.alarm_canvases[device_name]
+                canvas.delete("all")
+                canvas.create_oval(2, 2, 18, 18, fill='gray', outline='black')
 
 if __name__ == '__main__':
     app = MasterHMI()

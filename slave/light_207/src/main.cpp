@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.26"
+#define CURRENT_VERSION "1.0.27"
 #define DEVICE_ID "light_207"
 
 // WiFi credentials
@@ -44,6 +44,12 @@ const long udpBroadcastInterval = 500;  // Broadcast every 5 seconds
 
 unsigned long lastLightAdjust = 0;
 const long lightAdjustInterval = 100;  // Adjust light every 100ms
+
+// Heartbeat UDP settings
+#define HEARTBEAT_PORT 4220
+#define MASTER_HEARTBEAT_IP IPAddress(192,168,137,1)
+#define HEARTBEAT_INTERVAL 500
+unsigned long lastHeartbeat = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -186,6 +192,11 @@ void adjustLight() {
     }
 }
 
+void sendHeartbeat() {
+    String msg = String(DEVICE_ID) + ":HEARTBEAT";
+    udpHandler.sendTo(msg.c_str(), MASTER_HEARTBEAT_IP, HEARTBEAT_PORT);
+}
+
 void loop() {
     unsigned long currentMillis = millis();
     
@@ -247,6 +258,12 @@ void loop() {
             uint16_t masterPort = 4210;        // Set to your master server UDP port
             udpHandler.sendTo(status.c_str(), masterIP, masterPort);
         }
+    }
+
+    // Send heartbeat
+    if (currentMillis - lastHeartbeat >= HEARTBEAT_INTERVAL) {
+        lastHeartbeat = currentMillis;
+        sendHeartbeat();
     }
 
     // Check for incoming UDP messages (process all available)
