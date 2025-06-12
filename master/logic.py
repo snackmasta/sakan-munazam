@@ -1,7 +1,25 @@
+from filterpy.kalman import KalmanFilter
+import numpy as np
+
 class LuxTrendLogic:
     def __init__(self, max_lux_points=75):
         self.lux_data = []
         self.max_lux_points = max_lux_points
+        # Kalman filter for each device
+        self.kalman_filters = {
+            'light_207': self._create_kalman_filter(),
+            'light_208': self._create_kalman_filter()
+        }
+
+    def _create_kalman_filter(self):
+        kf = KalmanFilter(dim_x=1, dim_z=1)
+        kf.x = np.array([[0.]])  # initial state
+        kf.F = np.array([[1.]])   # state transition matrix
+        kf.H = np.array([[1.]])   # measurement function
+        kf.P *= 10.               # covariance matrix
+        kf.R = 1.                 # measurement noise
+        kf.Q = 0.01               # process noise
+        return kf
 
     def update_lux_from_msg(self, msg, draw_callback):
         try:
@@ -20,6 +38,11 @@ class LuxTrendLogic:
                     if '.' in part:
                         try:
                             lux = float(part)
+                            if dev in self.kalman_filters:
+                                kf = self.kalman_filters[dev]
+                                kf.predict()
+                                kf.update(lux)
+                                lux = float(kf.x[0])
                             self.lux_data.append((lux, color, dev))
                             if len(self.lux_data) > self.max_lux_points:
                                 self.lux_data = self.lux_data[-self.max_lux_points:]
