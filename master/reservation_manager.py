@@ -113,6 +113,12 @@ class ReservationManager:
                     if send_command:
                         send_command(lock_dev, 'UNLOCK')
                         print(f"[DEBUG] UNLOCK command attempted for {lock_dev} via send_command.")
+                        # Schedule LOCK after 3 seconds
+                        import threading
+                        def delayed_lock():
+                            send_command(lock_dev, 'LOCK')
+                            print(f"[DEBUG] LOCK command sent to {lock_dev} after 3s delay following one-time UNLOCK.")
+                        threading.Timer(3, delayed_lock).start()
                     else:
                         print(f"[DEBUG] send_command is None. Cannot send UNLOCK to {lock_dev}.")
 
