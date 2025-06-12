@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Registration</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>User Registration</h1>
+        <form id="userRegistrationForm">
+            <label>NIM: <input type="text" name="nim" required></label><br>
+            <label>Name: <input type="text" name="name" required></label><br>
+            <label>RFID UID: <input type="text" name="rfid_UID"></label><br>
+            <button type="submit">Register</button>
+        </form>
+        <div id="registrationMessage"></div>
+    </div>
+    <script src="/static/register_user.js"></script>
+</body>
+</html>
