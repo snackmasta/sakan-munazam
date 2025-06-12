@@ -31,8 +31,8 @@ private:
   int inMin, inMax, outMin, outMax;
 
   struct LDRCalibration {
-    float coeffs[3]; // For quadratic: coeffs[0] + coeffs[1]*x + coeffs[2]*x^2
-    uint8_t degree;  // 1=linear, 2=quadratic
+    float coeffs[4]; // For cubic: coeffs[0] + coeffs[1]*x + coeffs[2]*x^2 + coeffs[3]*x^3
+    uint8_t degree;  // 1=linear, 2=quadratic, 3=cubic
     bool valid;
   } calibration;
 };

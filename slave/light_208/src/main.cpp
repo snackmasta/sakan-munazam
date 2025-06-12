@@ -6,7 +6,7 @@
 // OTA Update Configuration
 #define OTA_SERVER "192.168.137.1"
 #define OTA_PORT 5000
-#define CURRENT_VERSION "1.0.21"
+#define CURRENT_VERSION "1.0.22"
 #define DEVICE_ID "light_208"
 
 // WiFi credentials
@@ -61,7 +61,7 @@ void setup() {
     Serial.print("[CALIBRATION] Loaded. Degree: ");
     Serial.print(ldrSensor.getCalibrationDegree());
     Serial.print(" Coeffs: ");
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 4; ++i) {
         Serial.print(ldrSensor.getCalibrationCoeff(i)); Serial.print(" ");
     }
     Serial.println();
@@ -77,14 +77,14 @@ void setup() {
 }
 
 void handleCalibrationCommand(String message) {
-    // Format: CAL:degree:coeff0:coeff1:coeff2
-    float coeffs[3] = {0};
+    // Format: CAL:degree:coeff0:coeff1:coeff2:coeff3
+    float coeffs[4] = {0};
     int lastPos = 4;
     int nextPos;
     int degree = 1;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         nextPos = message.indexOf(':', lastPos);
-        String val = (i < 3) ? message.substring(lastPos, nextPos) : message.substring(lastPos);
+        String val = (i < 4) ? message.substring(lastPos, nextPos) : message.substring(lastPos);
         if (i == 0) degree = val.toInt();
         else coeffs[i-1] = val.toFloat();
         lastPos = nextPos + 1;
@@ -208,22 +208,27 @@ void loop() {
             Serial.print("[DEBUG] Calibration degree: ");
             Serial.println(ldrSensor.getCalibrationDegree());
             Serial.print("[DEBUG] Calibration coeffs: ");
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i <= ldrSensor.getCalibrationDegree(); ++i) {
                 Serial.print(ldrSensor.getCalibrationCoeff(i)); Serial.print(" ");
             }
             Serial.println();
             Serial.print("[DEBUG] Raw: "); Serial.print(raw);
             Serial.print("  Calculated Lux: "); Serial.println(currentLux, 4);
             // Show formula used
-            float c0 = ldrSensor.getCalibrationCoeff(0);
-            float c1 = ldrSensor.getCalibrationCoeff(1);
-            float c2 = ldrSensor.getCalibrationCoeff(2);
             Serial.print("[DEBUG] Formula: lux = ");
-            Serial.print(c0); Serial.print(" + ");
-            Serial.print(c1); Serial.print("*raw + ");
-            Serial.print(c2); Serial.print("*raw^2");
+            for (int i = 0; i <= ldrSensor.getCalibrationDegree(); ++i) {
+                if (i > 0) Serial.print(" + ");
+                Serial.print(ldrSensor.getCalibrationCoeff(i));
+                if (i == 1) Serial.print("*raw");
+                else if (i > 1) {
+                    Serial.print("*raw^"); Serial.print(i);
+                }
+            }
             Serial.println();
-            float expectedLux = c0 + c1 * raw + c2 * raw * raw;
+            float expectedLux = 0.0f;
+            for (int i = 0; i <= ldrSensor.getCalibrationDegree(); ++i) {
+                expectedLux += ldrSensor.getCalibrationCoeff(i) * pow(raw, i);
+            }
             Serial.print("[DEBUG] Formula result for raw ");
             Serial.print(raw); Serial.print(": ");
             Serial.println(expectedLux, 4);
