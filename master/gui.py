@@ -163,13 +163,16 @@ class HMIWidgets:
 
     def _update_reservation_listbox(self, listbox):
         from utils import sql
+        from utils.get_nim_helper import get_nim_for_reservations
         listbox.delete(0, 'end')
         reservations = sql.get_next_3_reservations()
+        # Fetch NIMs for these reservations
+        reservations = get_nim_for_reservations(reservations)
         if not reservations:
             listbox.insert('end', 'No upcoming reservations.')
         else:
             for r in reservations:
-                s = f"Room {r['room_id']} | User {r['user_id']} | {r['date']} {r['start_time']} - {r['end_time']}"
+                nim = r.get('nim', '-')
+                s = f"Room {r['room_id']} | NIM {nim} | {r['date']} {r['start_time']} - {r['end_time']}"
                 listbox.insert('end', s)
-
         return self.widgets
