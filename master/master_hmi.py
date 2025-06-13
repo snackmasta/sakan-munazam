@@ -239,6 +239,11 @@ class MasterHMI(tk.Tk):
                 except Exception:
                     lux_val = 0.0
                 state[f'lux_{dev}'] = lux_val
+        # Add PWM values for each light device (for OPC relay)
+        if hasattr(self, 'pwm_vars'):
+            for dev in self.pwm_vars:
+                # dev: light_207, light_208
+                state[f'pwm_{dev}'] = int(self.pwm_vars[dev]) if str(self.pwm_vars[dev]).isdigit() else 0
         with self._opc_state_lock:
             self._opc_state_snapshot = state.copy()
 
@@ -265,6 +270,8 @@ class MasterHMI(tk.Tk):
             # Add OPC tags for lux values
             'lux_light_207': "ns=2;s=ROOM 207.Device1.lux_light_207",
             'lux_light_208': "ns=2;s=ROOM 207.Device1.lux_light_208",
+            'pwm_light_207': "ns=2;s=ROOM 207.Device1.pwm_light_207",
+            'pwm_light_208': "ns=2;s=ROOM 207.Device1.pwm_light_208",
         }
         if not self.opc_connected or key not in TAG_MAP:
             return
@@ -379,6 +386,20 @@ class MasterHMI(tk.Tk):
 
         except Exception as e:
             print(f"[HMI_DEBUG] Error in log_incoming parsing for one-time access: {e}, Original message: {msg_with_source}")
+
+        # --- Parse PWM value from light incoming log ---
+        try:
+            # Format: device:STATE:LUX:PWM:LDR
+            parts = original_msg_content.split(":")
+            if len(parts) >= 4:
+                dev = parts[0]
+                if dev in self.lux_vars:  # Only for light devices
+                    pwm_val = parts[3].strip()
+                    if not hasattr(self, 'pwm_vars'):
+                        self.pwm_vars = {}
+                    self.pwm_vars[dev] = pwm_val
+        except Exception as e:
+            print(f"[HMI_DEBUG] Error parsing PWM from incoming log: {e}")
 
         # Determine message content for downstream handlers (_update_led_status, _update_lux_from_msg)
         msg_for_downstream_handlers = original_msg_content if original_msg_content else msg_with_source
