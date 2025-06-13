@@ -131,7 +131,13 @@ def ensure_log_tables_exist():
             CREATE TABLE IF NOT EXISTS outgoing_log (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 log_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-                message TEXT
+                device VARCHAR(64),
+                log_type VARCHAR(16),
+                state VARCHAR(16),
+                value1 VARCHAR(32),
+                value2 VARCHAR(32),
+                value3 VARCHAR(32),
+                raw_message TEXT
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
         connection.commit()
@@ -176,14 +182,37 @@ def insert_incoming_log(raw_message):
         cursor.close()
         connection.close()
 
-def insert_outgoing_log(message):
+def parse_outgoing_log(raw_message):
+    """Parse the outgoing log message into structured fields."""
+    # Example: [2025-06-13 09:40:46] Sent PWM:128 to light_208 at 192.168.137.247:4210
+    import re
+    # Extract timestamp, log_type, state, value1, device, value2, value3
+    pattern = r"^\[(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] Sent (?P<state>[^:]+):?(?P<value1>[^ ]*) to (?P<device>[^ ]+) at (?P<value2>[^ ]+)(?::(?P<value3>\d+))?"
+    m = re.match(pattern, raw_message)
+    if m:
+        ts = m.group('ts')
+        device = m.group('device')
+        log_type = 'SENT'
+        state = m.group('state')
+        value1 = m.group('value1')
+        value2 = m.group('value2')
+        value3 = m.group('value3')
+        return ts, device, log_type, state, value1, value2, value3, raw_message
+    else:
+        return None, None, None, None, None, None, None, raw_message
+
+def insert_outgoing_log(raw_message):
     ensure_log_tables_exist()
+    ts, device, log_type, state, value1, value2, value3, raw_message = parse_outgoing_log(raw_message)
     try:
         connection = get_connection()
         cursor = connection.cursor()
         cursor.execute(
-            "INSERT INTO outgoing_log (message) VALUES (%s)",
-            (message,)
+            """
+            INSERT INTO outgoing_log (log_time, device, log_type, state, value1, value2, value3, raw_message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (ts, device, log_type, state, value1, value2, value3, raw_message)
         )
         connection.commit()
     finally:
