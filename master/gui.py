@@ -69,6 +69,15 @@ class HMIWidgets:
                     toggle_btn.config(command=lambda s=pwm_slider, b=toggle_btn, n=name: toggle_pwm_mode(s, b, n))
                     self.widgets[f'{name}_pwm_slider'] = pwm_slider
                     self.widgets[f'{name}_pwm_toggle_btn'] = toggle_btn
+                    # Add LDR value label
+                    ldr_label = tk.Label(frame, text='LDR: -', width=10, anchor='w')
+                    ldr_label.pack(side='left', padx=4)
+                    self.widgets[f'{name}_ldr_value'] = ldr_label
+                    # Add Lux value label
+                    lux_label = tk.Label(frame, text='Lux: -', width=10, anchor='w')
+                    lux_label.pack(side='left', padx=4)
+                    self.widgets[f'{name}_lux_value'] = lux_label
+
         self.widgets['lock_frame'] = lock_frame
         self.widgets['light_frame'] = light_frame        # Right panel: Trend chart
         right_panel = tk.LabelFrame(main_frame, text="Trend Visualization", font=("Arial", 10, "bold"), padx=8, pady=8)

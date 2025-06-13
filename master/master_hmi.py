@@ -151,6 +151,28 @@ class MasterHMI(tk.Tk):
             reset_btn.pack(side='left', padx=5)
             self.maintenance_reset_buttons[room] = reset_btn
 
+        # Add LDR value StringVars for each light device
+        self.ldr_vars = {}
+        for dev in DEVICES:
+            if DEVICES[dev]['type'] == 'light':
+                self.ldr_vars[dev] = tk.StringVar(value='-')
+        # If the GUI widgets for LDR exist, link them
+        for dev in self.ldr_vars:
+            ldr_widget_key = f'{dev}_ldr_value'
+            if ldr_widget_key in self.widgets:
+                self.widgets[ldr_widget_key].config(textvariable=self.ldr_vars[dev])
+
+        # Add Lux value StringVars for each light device
+        self.lux_vars = {}
+        for dev in DEVICES:
+            if DEVICES[dev]['type'] == 'light':
+                self.lux_vars[dev] = tk.StringVar(value='-')
+        # If the GUI widgets for Lux exist, link them
+        for dev in self.lux_vars:
+            lux_widget_key = f'{dev}_lux_value'
+            if lux_widget_key in self.widgets:
+                self.widgets[lux_widget_key].config(textvariable=self.lux_vars[dev])
+
         self.after(100, self.process_incoming_queue)
 
         # Start heartbeat listener
@@ -371,7 +393,20 @@ class MasterHMI(tk.Tk):
             print(f"LED status update error: {e}")
 
     def _update_lux_from_msg(self, msg):
+        # Update lux trend and also update LDR and Lux value boxes for each light
         self.lux_logic.update_lux_from_msg(msg, lambda: self.lux_logic.draw_lux_trend(self.lux_ax, self.lux_canvas))
+        # Parse and update LDR and Lux values
+        for dev in self.ldr_vars:
+            if dev in msg:
+                # Expecting format: device:STATE:LUX:PWM:LDR
+                parts = msg.split(':')
+                if len(parts) >= 5:
+                    ldr_val = parts[4].strip()
+                    self.ldr_vars[dev].set(ldr_val)
+                if len(parts) >= 3:
+                    lux_val = parts[2].strip()
+                    if dev in self.lux_vars:
+                        self.lux_vars[dev].set(lux_val)
 
     def _draw_lux_trend(self):
         self.lux_logic.draw_lux_trend(self.lux_ax, self.lux_canvas)
@@ -545,5 +580,17 @@ class MasterHMI(tk.Tk):
 
 if __name__ == '__main__':
     app = MasterHMI()
-    app.after(100, app.show_server_log)  # Show last 50 incoming log lines from server.log on startup
+    def listen_for_q():
+        try:
+            while True:
+                key = sys.stdin.read(1)
+                if key.lower() == 'q':
+                    print('Detected "q" keypress. Shutting down...')
+                    app.shutdown()
+                    break
+        except Exception:
+            pass
+    # Start the key listener in a background thread
+    threading.Thread(target=listen_for_q, daemon=True).start()
+    app.after(1000, app.show_server_log)  # Show last 50 incoming log lines from server.log after 1s
     app.mainloop()
