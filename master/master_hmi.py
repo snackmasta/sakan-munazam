@@ -228,6 +228,14 @@ class MasterHMI(tk.Tk):
             state[f'alarm_{dev}'] = getattr(canvas, '_json_alarm_state', 0)
         for room in self.maintenance_indicators:
             state[f'maintenance_{room}'] = 1 if self.maintenance_indicators[room].cget('bg') == 'orange' else 0
+        # Add lux values for each light device
+        if hasattr(self, 'lux_vars'):
+            for dev in self.lux_vars:
+                try:
+                    lux_val = float(self.lux_vars[dev].get())
+                except Exception:
+                    lux_val = 0.0
+                state[f'lux_{dev}'] = lux_val
         with self._opc_state_lock:
             self._opc_state_snapshot = state.copy()
 
@@ -251,12 +259,20 @@ class MasterHMI(tk.Tk):
             'alarm_light_208': "ns=2;s=ROOM 207.Device1.alarm_light_208",
             'maintenance_207': "ns=2;s=ROOM 207.Device1.maintenance_207",
             'maintenance_208': "ns=2;s=ROOM 207.Device1.maintenance_208",
+            # Add OPC tags for lux values
+            'lux_light_207': "ns=2;s=ROOM 207.Device1.lux_light_207",
+            'lux_light_208': "ns=2;s=ROOM 207.Device1.lux_light_208",
         }
         if not self.opc_connected or key not in TAG_MAP:
             return
         try:
             node = self.opc_client.get_node(TAG_MAP[key])
             varianttype = node.get_data_type_as_variant_type()
+            # For lux, always send as float
+            if key.startswith('lux_'):
+                v = float(value)
+                node.set_value(ua.DataValue(ua.Variant(v, ua.VariantType.Float)))
+                return
             if varianttype == ua.VariantType.Boolean:
                 v = value
             elif varianttype == ua.VariantType.Byte:
