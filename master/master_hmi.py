@@ -11,6 +11,7 @@ matplotlib.use('Agg')  # Use non-interactive backend for safety
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import sys
+import queue
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 from utils import sql
@@ -75,6 +76,7 @@ class MasterHMI(tk.Tk):
         self.geometry('800x600')
         self.lux_logic = LuxTrendLogic(max_lux_points=75)
         self._stop_event = threading.Event()
+        self.gui_queue = queue.Queue()  # Thread-safe queue for GUI updates
         # Networking handler
         self.network = MasterNetworkHandler(
             devices=DEVICES,
@@ -174,6 +176,7 @@ class MasterHMI(tk.Tk):
                 self.widgets[lux_widget_key].config(textvariable=self.lux_vars[dev])
 
         self.after(100, self.process_incoming_queue)
+        self.after(100, self.process_gui_queue)  # Start polling the GUI queue
 
         # Start heartbeat listener
         self.heartbeat_listener = HeartbeatListener(DEVICES.keys(), self.heartbeat_alarm_callback)
@@ -436,6 +439,15 @@ class MasterHMI(tk.Tk):
         self.network.process_incoming_queue()
         self.after(100, self.process_incoming_queue)
 
+    def process_gui_queue(self):
+        try:
+            while True:
+                func, args, kwargs = self.gui_queue.get_nowait()
+                func(*args, **kwargs)
+        except queue.Empty:
+            pass
+        self.after(50, self.process_gui_queue)  # Poll frequently
+
     def tail_server_log(self, log_path="../server.log", n=20):
         """Read the last n lines from the server.log file and display them in the incoming log area."""
         if not os.path.isabs(log_path):
@@ -561,9 +573,9 @@ class MasterHMI(tk.Tk):
 
     def heartbeat_alarm_callback(self, device_name, alarm_on):
         """Callback function for heartbeat alarms."""
-        if device_name in self.alarm_canvases:
-            canvas = self.alarm_canvases[device_name]
-            def update_alarm_canvas():
+        def update_alarm_canvas():
+            if device_name in self.alarm_canvases:
+                canvas = self.alarm_canvases[device_name]
                 if alarm_on:
                     # Heartbeat lost
                     if not getattr(canvas, '_acknowledged', False):
@@ -577,7 +589,8 @@ class MasterHMI(tk.Tk):
                         canvas.stop_blinking()
                     canvas.itemconfig('all', fill='gray')
                 self._update_opc_state_snapshot()  # Update state after alarm change
-            self.after(0, update_alarm_canvas)
+        # Instead of calling self.after directly, put the update in the queue
+        self.gui_queue.put((update_alarm_canvas, (), {}))
 
     def reset_maintenance(self, room):
         self.set_maintenance(room, on=False)

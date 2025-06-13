@@ -5,6 +5,14 @@ from ..handlers.device_manager import DeviceManager
 from ..utils.sql import is_access_allowed, is_user_id_valid
 from .command_logger import log_command
 
+# Daftar IP slave yang diizinkan
+ALLOWED_SLAVE_IPS = [
+    "192.168.137.248",  # light_207
+    "192.168.137.247",  # light_208
+    "192.168.137.250",  # lock_207
+    "192.168.137.249",  # lock_208
+]
+
 class UDPHandler:
     def __init__(self, port=UDP_PORT, buffer_size=BUFFER_SIZE):
         self.port = port
@@ -58,6 +66,10 @@ class UDPHandler:
 
     def handle_message(self, message, addr):
         """Handle incoming UDP messages."""
+        # Filter: hanya terima dari IP slave yang diizinkan
+        if addr[0] not in ALLOWED_SLAVE_IPS:
+            # Bisa log jika ingin: print(f"[WARNING] Paket UDP dari IP tidak dikenal: {addr[0]}")
+            return  # Abaikan paket
         parts = message.split(":")
         
         if len(parts) >= 2:
