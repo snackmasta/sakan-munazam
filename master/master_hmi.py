@@ -104,6 +104,10 @@ class MasterHMI(tk.Tk):
         self.user_id_entry = self.widgets['user_id_entry']
         self.ip_entry = self.widgets['ip_entry']
 
+        # Add Shutdown button
+        shutdown_btn = tk.Button(self, text='Shutdown', bg='red', fg='white', font=('Arial', 12, 'bold'), command=self.shutdown)
+        shutdown_btn.pack(pady=10, side='bottom')
+
         # Add LED indicators and alarm placeholders for each slave device
         self.led_vars = {}
         self.led_labels = {}
@@ -395,13 +399,38 @@ class MasterHMI(tk.Tk):
         self.incoming_log_area.config(state='disabled')
         self.tail_server_log(log_path="server.log", n=50)
 
+    def shutdown(self):
+        """Properly shutdown the HMI, close threads/resources, and exit the application."""
+        try:
+            # Signal threads to stop
+            self._stop_event.set()
+            if hasattr(self, 'heartbeat_listener') and self.heartbeat_listener:
+                self.heartbeat_listener.stop()
+            # Stop OPC UA thread if running
+            if hasattr(self, '_opc_thread') and self._opc_thread:
+                if hasattr(self, '_opcua_thread_stop'):
+                    self._opcua_thread_stop.set()
+                self._opc_thread.join(timeout=1)
+            # Disconnect OPC UA client if connected
+            if hasattr(self, 'opc_client') and self.opc_client:
+                try:
+                    self.opc_client.disconnect()
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[HMI] Error during shutdown: {e}")
+        finally:
+            self.quit()
+            self.destroy()
+            import sys
+            sys.exit(0)
+
     def destroy(self):
-        self._opcua_thread_stop.set()
-        if self._opcua_thread:
-            self._opcua_thread.join(timeout=1)
-        self._stop_event.set()
-        self.heartbeat_listener.stop()
-        super().destroy()
+        # Overridden to ensure shutdown is always called
+        try:
+            super().destroy()
+        except Exception:
+            pass
 
     def broadcast_mesh_command(self, target_device, command):
         try:

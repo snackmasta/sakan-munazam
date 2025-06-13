@@ -118,7 +118,13 @@ def ensure_log_tables_exist():
             CREATE TABLE IF NOT EXISTS incoming_log (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 log_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-                message TEXT
+                device VARCHAR(64),
+                log_type VARCHAR(16),
+                state VARCHAR(16),
+                value1 VARCHAR(32),
+                value2 VARCHAR(32),
+                value3 VARCHAR(32),
+                raw_message TEXT
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
         cursor.execute("""
@@ -133,14 +139,37 @@ def ensure_log_tables_exist():
         cursor.close()
         connection.close()
 
-def insert_incoming_log(message):
+def parse_incoming_log(raw_message):
+    """Parse the incoming log message into structured fields."""
+    # Example: 2025-06-05 14:50:30,359 [RECV] From ('192.168.137.247', 4210): light_208:OFF:0.5:0:162
+    import re
+    # Extract timestamp, device, type, state, value1, value2, value3
+    pattern = r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ \[RECV\] From \('(?P<ip>[\d.]+)', \d+\): (?P<device>[^:]+):(?P<state>[^:]+):?(?P<value1>[^:]*):?(?P<value2>[^:]*):?(?P<value3>[^:]*).*"
+    m = re.match(pattern, raw_message)
+    if m:
+        ts = m.group('ts')
+        device = m.group('device')
+        log_type = 'RECV'
+        state = m.group('state')
+        value1 = m.group('value1')
+        value2 = m.group('value2')
+        value3 = m.group('value3')
+        return ts, device, log_type, state, value1, value2, value3, raw_message
+    else:
+        return None, None, None, None, None, None, None, raw_message
+
+def insert_incoming_log(raw_message):
     ensure_log_tables_exist()
+    ts, device, log_type, state, value1, value2, value3, raw_message = parse_incoming_log(raw_message)
     try:
         connection = get_connection()
         cursor = connection.cursor()
         cursor.execute(
-            "INSERT INTO incoming_log (message) VALUES (%s)",
-            (message,)
+            """
+            INSERT INTO incoming_log (log_time, device, log_type, state, value1, value2, value3, raw_message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (ts, device, log_type, state, value1, value2, value3, raw_message)
         )
         connection.commit()
     finally:
