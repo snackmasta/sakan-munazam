@@ -6,7 +6,6 @@ import time
 import threading
 import socket
 import json
-from opcua import Client, ua
 matplotlib.use('Agg')  # Use non-interactive backend for safety
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -198,104 +197,6 @@ class MasterHMI(tk.Tk):
                 self.after(60000, periodic_update)
             self.after(60000, periodic_update)
 
-        # OPC UA client
-        self.opc_client = None
-        self.opc_connected = False
-        self._opc_state_lock = threading.Lock()
-        self._opc_state_snapshot = {}
-        self._opc_thread = threading.Thread(target=self._opc_relay_thread, daemon=True)
-        self._opc_thread.start()
-        self._init_opcua_client()
-        self._update_opc_state_snapshot()  # Initialize snapshot
-        # self._start_opcua_relay_thread()  # Removed: no such method, thread already started
-
-    def _init_opcua_client(self):
-        try:
-            self.opc_client = Client("opc.tcp://DESKTOP-97F20FJ:49320")
-            self.opc_client.connect()
-            self.opc_connected = True
-            print("[HMI] Connected to OPC UA server.")
-        except Exception as e:
-            print(f"[HMI] OPC UA connection error: {e}")
-            self.opc_connected = False
-
-    def _update_opc_state_snapshot(self):
-        """Update the thread-safe snapshot of HMI state for OPC relay."""
-        state = {}
-        for dev in self.led_vars:
-            state[f'led_{dev}'] = 1 if self.led_vars[dev].get() in ('ON', 'UNLOCKED') else 0
-        for dev, canvas in self.alarm_canvases.items():
-            state[f'alarm_{dev}'] = getattr(canvas, '_json_alarm_state', 0)
-        for room in self.maintenance_indicators:
-            state[f'maintenance_{room}'] = 1 if self.maintenance_indicators[room].cget('bg') == 'orange' else 0
-        # Add lux values for each light device
-        if hasattr(self, 'lux_vars'):
-            for dev in self.lux_vars:
-                try:
-                    lux_val = float(self.lux_vars[dev].get())
-                except Exception:
-                    lux_val = 0.0
-                state[f'lux_{dev}'] = lux_val
-        with self._opc_state_lock:
-            self._opc_state_snapshot = state.copy()
-
-    def _opc_relay_thread(self):
-        while True:
-            with self._opc_state_lock:
-                state = self._opc_state_snapshot.copy()
-            for key, value in state.items():
-                self._opc_write(key, value)
-            time.sleep(0.01)  # 10ms, adjust as needed
-
-    def _opc_write(self, key, value):
-        TAG_MAP = {
-            'led_lock_207': "ns=2;s=ROOM 207.Device1.led_lock_207",
-            'led_lock_208': "ns=2;s=ROOM 207.Device1.led_lock_208",
-            'led_light_207': "ns=2;s=ROOM 207.Device1.led_light_207",
-            'led_light_208': "ns=2;s=ROOM 207.Device1.led_light_208",
-            'alarm_lock_207': "ns=2;s=ROOM 207.Device1.alarm_lock_207",
-            'alarm_lock_208': "ns=2;s=ROOM 207.Device1.alarm_lock_208",
-            'alarm_light_207': "ns=2;s=ROOM 207.Device1.alarm_light_207",
-            'alarm_light_208': "ns=2;s=ROOM 207.Device1.alarm_light_208",
-            'maintenance_207': "ns=2;s=ROOM 207.Device1.maintenance_207",
-            'maintenance_208': "ns=2;s=ROOM 207.Device1.maintenance_208",
-            # Add OPC tags for lux values
-            'lux_light_207': "ns=2;s=ROOM 207.Device1.lux_light_207",
-            'lux_light_208': "ns=2;s=ROOM 207.Device1.lux_light_208",
-        }
-        if not self.opc_connected or key not in TAG_MAP:
-            return
-        try:
-            node = self.opc_client.get_node(TAG_MAP[key])
-            varianttype = node.get_data_type_as_variant_type()
-            # For lux, always send as float
-            if key.startswith('lux_'):
-                v = float(value)
-                node.set_value(ua.DataValue(ua.Variant(v, ua.VariantType.Float)))
-                return
-            if varianttype == ua.VariantType.Boolean:
-                v = value
-            elif varianttype == ua.VariantType.Byte:
-                v = int(value) & 0xFF
-            elif varianttype == ua.VariantType.Int16:
-                v = int(value)
-            elif varianttype == ua.VariantType.UInt16:
-                v = int(value)
-            elif varianttype == ua.VariantType.Int32:
-                v = int(value)
-            elif varianttype == ua.VariantType.UInt32:
-                v = int(value)
-            else:
-                v = int(value)
-            node.set_value(ua.DataValue(ua.Variant(v, varianttype)))
-        except Exception as e:
-            # Handle socket error and mark OPC as disconnected
-            if hasattr(e, 'winerror') and e.winerror == 10038:
-                print(f"[HMI] OPC UA client socket error (disconnected): {e}")
-                self.opc_connected = False
-            else:
-                print(f"[HMI] Failed to write {key} to OPC: {e}")
-
     def send_command(self, device_name, command):
         try:
             self.network.send_command(device_name, command)
@@ -409,7 +310,6 @@ class MasterHMI(tk.Tk):
                 elif msg.startswith(dev + ':OFF') or msg.startswith(dev + ':LOCKED'):
                     self.led_vars[dev].set('OFF' if 'light' in dev else 'LOCKED')
                     indicator.config(bg='gray')
-            self._update_opc_state_snapshot()
         except Exception as e:
             print(f"LED status update error: {e}")
 
@@ -462,17 +362,6 @@ class MasterHMI(tk.Tk):
             self._stop_event.set()
             if hasattr(self, 'heartbeat_listener') and self.heartbeat_listener:
                 self.heartbeat_listener.stop()
-            # Stop OPC UA thread if running
-            if hasattr(self, '_opc_thread') and self._opc_thread:
-                if hasattr(self, '_opcua_thread_stop'):
-                    self._opcua_thread_stop.set()
-                self._opc_thread.join(timeout=1)
-            # Disconnect OPC UA client if connected
-            if hasattr(self, 'opc_client') and self.opc_client:
-                try:
-                    self.opc_client.disconnect()
-                except Exception:
-                    pass
         except Exception as e:
             print(f"[HMI] Error during shutdown: {e}")
         finally:
@@ -555,7 +444,6 @@ class MasterHMI(tk.Tk):
                     canvas._blink_job = None
                 # Set to solid red until heartbeat returns and reset is pressed
                 canvas.itemconfig('all', fill='red')
-            self._update_opc_state_snapshot()  # Update state after ACK
         except Exception as e:
             messagebox.showerror('Error', f"Failed to acknowledge alarm: {e}")
 
@@ -576,7 +464,6 @@ class MasterHMI(tk.Tk):
                     if getattr(canvas, '_blinking', False):
                         canvas.stop_blinking()
                     canvas.itemconfig('all', fill='gray')
-                self._update_opc_state_snapshot()  # Update state after alarm change
             self.after(0, update_alarm_canvas)
 
     def reset_maintenance(self, room):
@@ -590,14 +477,12 @@ class MasterHMI(tk.Tk):
                     canvas._acknowledged = False
                     canvas.stop_blinking()
                     canvas.itemconfig('all', fill='gray')
-        self._update_opc_state_snapshot()  # Update state after reset
         self.log(f"Maintenance reset for Room {room}")
 
     def set_maintenance(self, room, on=True):
         if room in self.maintenance_indicators:
             indicator = self.maintenance_indicators[room]
             indicator.config(bg='orange' if on else 'gray')
-            self._update_opc_state_snapshot()  # Update state after maintenance change
 
 if __name__ == '__main__':
     app = MasterHMI()
