@@ -109,6 +109,58 @@ def get_next_3_reservations():
         cursor.close()
         connection.close()
 
+def ensure_log_tables_exist():
+    """Create incoming_log and outgoing_log tables if they do not exist."""
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS incoming_log (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                log_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                message TEXT
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS outgoing_log (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                log_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                message TEXT
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+        connection.commit()
+    finally:
+        cursor.close()
+        connection.close()
+
+def insert_incoming_log(message):
+    ensure_log_tables_exist()
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO incoming_log (message) VALUES (%s)",
+            (message,)
+        )
+        connection.commit()
+    finally:
+        cursor.close()
+        connection.close()
+
+def insert_outgoing_log(message):
+    ensure_log_tables_exist()
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO outgoing_log (message) VALUES (%s)",
+            (message,)
+        )
+        connection.commit()
+    finally:
+        cursor.close()
+        connection.close()
+
 if __name__ == "__main__":
     print("All valid user IDs in the database:")
     for uid in get_all_user_ids():

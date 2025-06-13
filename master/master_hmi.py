@@ -172,8 +172,6 @@ class MasterHMI(tk.Tk):
                 self.after(60000, periodic_update)
             self.after(60000, periodic_update)
 
-        self.bind('<<AlarmBlink>>', lambda e: self.write_hmi_state_json())
-
         # OPC UA client
         self.opc_client = None
         self.opc_connected = False
@@ -259,17 +257,27 @@ class MasterHMI(tk.Tk):
 
     def log(self, msg):
         from datetime import datetime
+        from utils import sql
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.log_area.config(state='normal')
         self.log_area.insert('end', f"[{timestamp}] {msg}\n")
         self.log_area.see('end')
         self.log_area.config(state='disabled')
+        try:
+            sql.insert_outgoing_log(f"[{timestamp}] {msg}")
+        except Exception as e:
+            print(f"[HMI] Failed to record outgoing log: {e}")
 
     def log_incoming(self, msg_with_source): # Renamed to avoid confusion with internal msg variable
+        from utils import sql
         self.incoming_log_area.config(state='normal')
         self.incoming_log_area.insert('end', msg_with_source + '\n')
         self.incoming_log_area.see('end')
         self.incoming_log_area.config(state='disabled')
+        try:
+            sql.insert_incoming_log(msg_with_source)
+        except Exception as e:
+            print(f"[HMI] Failed to record incoming log: {e}")
 
         original_msg_content = ""
         source_ip = None
@@ -505,53 +513,6 @@ class MasterHMI(tk.Tk):
             indicator = self.maintenance_indicators[room]
             indicator.config(bg='orange' if on else 'gray')
             self._update_opc_state_snapshot()  # Update state after maintenance change
-
-    def get_hmi_state_json(self):
-        """Collect all HMI component states and return as flat JSON string with only numerical values (one value per UI element). Alarms: 1=red, 0=gray. Blinking is just rapid value change."""
-        state = {}
-        # LEDs: led_<dev> = 1 (ON/UNLOCKED), 0 (OFF/LOCKED)
-        for dev in self.led_vars:
-            val = self.led_vars[dev].get()
-            if val in ('ON', 'UNLOCKED'):
-                state[f'led_{dev}'] = 1
-            else:
-                state[f'led_{dev}'] = 0
-        # Alarms: alarm_<dev> = 1 (red), 0 (gray). Use the current visible state for blinking.
-        for dev, canvas in self.alarm_canvases.items():
-            state[f'alarm_{dev}'] = getattr(canvas, '_json_alarm_state', 0)
-        # Maintenance: maintenance_<room> = 1 (on/orange), 0 (off/gray)
-        for room in self.maintenance_indicators:
-            state[f'maintenance_{room}'] = 1 if self.maintenance_indicators[room].cget('bg') == 'orange' else 0
-        # Reserved lights: reserved_light_<dev> = 1 (on), 0 (off)
-        if hasattr(self.reservation_manager, 'reserved_lights_on'):
-            for dev, val in self.reservation_manager.reserved_lights_on.items():
-                state[f'reserved_light_{dev}'] = 1 if val else 0
-        # Reservation state (flattened): reservation_<lock> = 1 (reserved), 0 (not reserved)
-        if hasattr(self.reservation_manager, 'get_reservation_state'):
-            reservations = self.reservation_manager.get_reservation_state()
-            for lock, info in reservations.items():
-                state[f'reservation_{lock}'] = 1 if info.get('reserved', False) else 0
-        return json.dumps(state, indent=2)
-
-    def write_hmi_state_json(self, path='hmi_state.json'):
-        """Write the current HMI state to a JSON file."""
-        try:
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(self.get_hmi_state_json())
-        except Exception as e:
-            print(f"[HMI_DEBUG] Failed to write HMI state JSON: {e}")
-
-    def periodic_hmi_state_update(self):
-        self.write_hmi_state_json()
-        self.after(500, self.periodic_hmi_state_update)
-
-    def destroy(self):
-        self._opcua_thread_stop.set()
-        if self._opcua_thread:
-            self._opcua_thread.join(timeout=1)
-        self._stop_event.set()
-        self.heartbeat_listener.stop()
-        super().destroy()
 
 if __name__ == '__main__':
     app = MasterHMI()
