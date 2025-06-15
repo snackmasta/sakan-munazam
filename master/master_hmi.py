@@ -13,6 +13,34 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import sys
 import queue
 
+# --- Load config from file ---
+def load_config(config_path='../config.json'):
+    default_config = {
+        "devices": {
+            'lock_207': {'ip': '192.168.137.250', 'port': 4210, 'type': 'lock'},
+            'lock_208': {'ip': '192.168.137.249', 'port': 4210, 'type': 'lock'},
+            'light_207': {'ip': '192.168.137.248', 'port': 4210, 'type': 'light'},
+            'light_208': {'ip': '192.168.137.247', 'port': 4210, 'type': 'light'},
+        },
+        "opcua_endpoint": "opc.tcp://DESKTOP-97F20FJ:49320"
+    }
+    try:
+        if not os.path.isabs(config_path):
+            config_path = os.path.join(os.path.dirname(__file__), config_path)
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        # Merge defaults for missing keys
+        for k, v in default_config.items():
+            if k not in config:
+                config[k] = v
+        return config
+    except Exception as e:
+        print(f"[CONFIG] Failed to load config file: {e}. Using defaults.")
+        return default_config
+
+# --- Load configuration at module level ---
+CONFIG = load_config()
+
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 from utils import sql
 from network import MasterNetworkHandler
@@ -21,13 +49,9 @@ from logic import LuxTrendLogic
 from alarm_placeholder import create_alarm_placeholder  # Import the alarm placeholder module
 from reservation_manager import ReservationManager
 
-# Device info (update as needed)
-DEVICES = {
-    'lock_207': {'ip': '192.168.137.250', 'port': 4210, 'type': 'lock'},
-    'lock_208': {'ip': '192.168.137.249', 'port': 4210, 'type': 'lock'},
-    'light_207': {'ip': '192.168.137.248', 'port': 4210, 'type': 'light'},
-    'light_208': {'ip': '192.168.137.247', 'port': 4210, 'type': 'light'},
-}
+# Device info (now from config)
+DEVICES = CONFIG["devices"]
+OPCUA_ENDPOINT = CONFIG["opcua_endpoint"]
 
 class HeartbeatListener(threading.Thread):
     def __init__(self, device_names, alarm_callback, port=4220, timeout=1.0):
@@ -212,12 +236,17 @@ class MasterHMI(tk.Tk):
         self._update_opc_state_snapshot()  # Initialize snapshot
         # self._start_opcua_relay_thread()  # Removed: no such method, thread already started
 
+        # Add Config button
+        config_btn = tk.Button(self, text='Config', bg='blue', fg='white', font=('Arial', 12, 'bold'), command=self.open_config_editor)
+        config_btn.pack(pady=5, side='bottom')
+
     def _init_opcua_client(self):
         try:
-            self.opc_client = Client("opc.tcp://DESKTOP-97F20FJ:49320")
+            # Use OPCUA_ENDPOINT from config
+            self.opc_client = Client(OPCUA_ENDPOINT)
             self.opc_client.connect()
             self.opc_connected = True
-            print("[HMI] Connected to OPC UA server.")
+            print(f"[HMI] Connected to OPC UA server at {OPCUA_ENDPOINT}.")
         except Exception as e:
             print(f"[HMI] OPC UA connection error: {e}")
             self.opc_connected = False
@@ -632,6 +661,70 @@ class MasterHMI(tk.Tk):
             indicator = self.maintenance_indicators[room]
             indicator.config(bg='orange' if on else 'gray')
             self._update_opc_state_snapshot()  # Update state after maintenance change
+
+    def open_config_editor(self):
+        """Open a window to edit the configuration (devices and OPC UA endpoint)."""
+        config_win = tk.Toplevel(self)
+        config_win.title("Edit Configuration")
+        config_win.geometry("600x400")
+        config_win.grab_set()
+
+        # OPC UA endpoint
+        tk.Label(config_win, text="OPC UA Endpoint:").grid(row=0, column=0, sticky='e')
+        opc_entry = tk.Entry(config_win, width=40)
+        opc_entry.insert(0, OPCUA_ENDPOINT)
+        opc_entry.grid(row=0, column=1, columnspan=3, sticky='w')
+
+        # Device table headers
+        tk.Label(config_win, text="Device Name", font=('Arial', 10, 'bold')).grid(row=1, column=0)
+        tk.Label(config_win, text="IP", font=('Arial', 10, 'bold')).grid(row=1, column=1)
+        tk.Label(config_win, text="Port", font=('Arial', 10, 'bold')).grid(row=1, column=2)
+        tk.Label(config_win, text="Type", font=('Arial', 10, 'bold')).grid(row=1, column=3)
+
+        device_entries = {}
+        for idx, (dev, info) in enumerate(DEVICES.items()):
+            tk.Label(config_win, text=dev).grid(row=2+idx, column=0)
+            ip_e = tk.Entry(config_win, width=15)
+            ip_e.insert(0, info['ip'])
+            ip_e.grid(row=2+idx, column=1)
+            port_e = tk.Entry(config_win, width=6)
+            port_e.insert(0, str(info['port']))
+            port_e.grid(row=2+idx, column=2)
+            type_e = tk.Entry(config_win, width=8)
+            type_e.insert(0, info['type'])
+            type_e.grid(row=2+idx, column=3)
+            device_entries[dev] = (ip_e, port_e, type_e)
+
+        def save_config():
+            # Validate and save config
+            new_config = {
+                "opcua_endpoint": opc_entry.get().strip(),
+                "devices": {}
+            }
+            for dev, (ip_e, port_e, type_e) in device_entries.items():
+                ip = ip_e.get().strip()
+                try:
+                    port = int(port_e.get().strip())
+                except Exception:
+                    messagebox.showerror("Config Error", f"Invalid port for {dev}")
+                    return
+                typ = type_e.get().strip()
+                if not ip or not typ:
+                    messagebox.showerror("Config Error", f"Missing fields for {dev}")
+                    return
+                new_config["devices"][dev] = {"ip": ip, "port": port, "type": typ}
+            # Save to config.json
+            config_path = os.path.join(os.path.dirname(__file__), "../config.json")
+            try:
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(new_config, f, indent=2)
+                messagebox.showinfo("Config", "Configuration saved.\nPlease restart the HMI for changes to take effect.")
+                config_win.destroy()
+            except Exception as e:
+                messagebox.showerror("Config Error", f"Failed to save config: {e}")
+
+        save_btn = tk.Button(config_win, text="Save", bg="green", fg="white", command=save_config)
+        save_btn.grid(row=2+len(DEVICES), column=0, columnspan=4, pady=10)
 
 if __name__ == '__main__':
     app = MasterHMI()
