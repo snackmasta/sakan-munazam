@@ -9,29 +9,38 @@
 <body>
     <div class="container">
         <h1>Room Reservation System</h1>
-        <form id="reservationForm">
-            <label>Room ID: <input type="text" name="room_id" required></label><br>
-            <label>NIM: <input type="text" name="user_id" required></label><br>
-            <label>Date: <input type="date" name="date" required></label><br>
-            <label>Start Time: <input type="time" name="start_time" required></label><br>
-            <label>End Time: <input type="time" name="end_time" required></label><br>
-            <button type="submit">Reserve</button>
+        <form id="reservationForm" autocomplete="off">
+            <label for="room_id">Room ID</label>
+            <input type="text" id="room_id" name="room_id" required placeholder="Enter Room ID">
+            <label for="user_id">NIM</label>
+            <input type="text" id="user_id" name="user_id" required placeholder="Enter your NIM">
+            <label for="date">Date</label>
+            <input type="date" id="date" name="date" required>
+            <label for="start_time">Start Time</label>
+            <input type="time" id="start_time" name="start_time" required>
+            <label for="end_time">End Time</label>
+            <input type="time" id="end_time" name="end_time" required>
+            <div style="text-align:center;margin-top:18px;">
+                <button type="submit">Reserve</button>
+            </div>
         </form>
         <h2>Reservations</h2>
-        <table id="reservationsTable" border="1">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Room</th>
-                    <th>NIM</th>
-                    <th>Date</th>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div style="overflow-x:auto;">
+            <table id="reservationsTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Room</th>
+                        <th>NIM</th>
+                        <th>Date</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
     <script src="/static/app.js"></script>
 </body>
