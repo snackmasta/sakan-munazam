@@ -17,7 +17,7 @@ client = Client("opc.tcp://DESKTOP-97F20FJ:49320")
 
 try:
     client.connect()
-    # Only print tags under ROOM 207/Device1
+    # Print tags under ROOM 207/Device1, including data type
     try:
         objects = client.get_objects_node()
         room207 = objects.get_child(["2:ROOM 207"])
@@ -27,9 +27,11 @@ try:
             tag_nodeid = tag.nodeid
             try:
                 tag_value = tag.get_value()
+                tag_datatype = tag.get_data_type_as_variant_type().name
             except Exception as e:
                 tag_value = f"Error reading value: {e}"
-            print(f"Tag: {tag_name}, NodeId: {tag_nodeid}, Value: {tag_value}")
+                tag_datatype = "Unknown"
+            print(f"Tag: {tag_name}, NodeId: {tag_nodeid}, Value: {tag_value}, DataType: {tag_datatype}")
     except Exception as e:
         pass  # Suppress all other output
 finally:

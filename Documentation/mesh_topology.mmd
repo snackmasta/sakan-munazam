@@ -7,7 +7,8 @@ flowchart TD
     WebInterface["Web Interface"]
     OTAServer["OTA Server (Node.js)"]
     Master["Master Server (Python)"]
-    KEPServer["KEPServer/OPC"]
+    KEPServer["KEPServer/OPC UA"]
+    HMI["HMI InTouch"]
     Light_207["Light Controller (light_207)"]
     Light_208["Light Controller (light_208)"]
     Lock_207["Lock Controller (lock_207)"]
@@ -33,7 +34,10 @@ flowchart TD
     Light_208 -- UDP --> Master
     Lock_207 -- UDP --> Master
     Lock_208 -- UDP --> Master
-    Master -- HTTP --> KEPServer
+    Master -- OPCUA --> KEPServer
+
+    %% HMI connection
+    HMI -- "FastDDE/SuiteLink" --> KEPServer
 
     %% Mesh connections between all slave devices (bidirectional)
     Light_207 -- UDP --> Light_208
