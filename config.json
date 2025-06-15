@@ -1,0 +1,25 @@
+{
+  "opcua_endpoint": "opc.tcp://DESKTOP-97F20FJ:49320",
+  "devices": {
+    "lock_207": {
+      "ip": "192.168.137.250",
+      "port": 4210,
+      "type": "lock"
+    },
+    "lock_208": {
+      "ip": "192.168.137.249",
+      "port": 4210,
+      "type": "lock"
+    },
+    "light_207": {
+      "ip": "192.168.137.248",
+      "port": 4210,
+      "type": "light"
+    },
+    "light_208": {
+      "ip": "192.168.137.247",
+      "port": 4210,
+      "type": "light"
+    }
+  }
+}
