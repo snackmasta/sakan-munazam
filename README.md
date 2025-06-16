@@ -162,3 +162,43 @@ Atau gunakan task build yang tersedia di VS Code:
 ### 4. Troubleshooting
 - Jika GUI tidak muncul atau ada error, pastikan semua dependensi sudah terinstal dan file konfigurasi sudah benar.
 - Cek log pada file `server.log` atau output terminal untuk pesan error lebih detail.
+
+---
+
+## Panduan Inisialisasi Folder `Web`
+
+### 1. Reservation Web
+
+Aplikasi manajemen reservasi ruangan.
+
+- Masuk ke folder: `Web/reservation_web/reservation-web`
+- Install dependensi:
+  ```bash
+  npm install
+  ```
+- Konfigurasi database: buat file `.env` dan isi dengan detail koneksi database Anda.
+- Jalankan aplikasi:
+  ```bash
+  npm start
+  ```
+- Akses di browser: [http://localhost:3000](http://localhost:3000)
+
+### 2. OTA Server
+
+Aplikasi untuk update firmware OTA dan kalibrasi sensor.
+
+- Masuk ke folder: `Web/OTA`
+- Install dependensi:
+  ```bash
+  npm install
+  ```
+- Jalankan server:
+  ```bash
+  node server.js
+  ```
+- Akses di browser: [http://localhost:5000](http://localhost:5000)
+
+**Catatan:**  
+- Pastikan koneksi database sudah benar untuk Reservation Web.
+- Untuk OTA, firmware hasil build perlu disalin ke folder OTA sesuai device.
+- Lihat README masing-masing subfolder untuk detail lebih lanjut.
