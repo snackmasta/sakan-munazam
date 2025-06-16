@@ -148,7 +148,7 @@ pip install -r requirements.txt
 Masih di folder utama, jalankan perintah berikut untuk memulai aplikasi GUI:
 
 ```bash
-python master_hmi.py
+python master/master_hmi.py
 ```
 
 Atau gunakan task build yang tersedia di VS Code:
